@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keto Genesis — Keto food in Bahria Town, Rawalpindi</title>
+<meta name="description" content="Keto breads, roti, sauces, meals and desserts from Keto Genesis in Bahria Town Phase 7, Rawalpindi. Browse the menu, check the macros, and order on WhatsApp.">
+<meta name="theme-color" content="#D42027">
+<meta property="og:title" content="Keto Genesis — The Fat Burning Fuel Factory">
+<meta property="og:description" content="Keto food in Bahria Town Phase 7, Rawalpindi. Browse the menu and order on WhatsApp.">
+<meta property="og:type" content="website">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1 class="brand">Keto <em>Genesis</em></h1>
+    <p class="tag"><b>The Fat Burning Fuel Factory</b><br>
+       Since 2020 &middot; Bahria Town Phase 7, Rawalpindi</p>
+  </header>
+</div>
+
+<div class="askbar">
+  <div class="wrap">
+    <div class="field">
+      <input type="search" id="q" placeholder="Search the menu, or ask a question"
+             autocomplete="off" enterkeyhint="search"
+             aria-label="Search the menu or ask a question">
+      <button class="ask" id="askBtn" disabled>Ask</button>
+    </div>
+    <p class="hint" id="hint">Type to filter the menu instantly.</p>
+    <div class="chips" id="chips" role="group" aria-label="Categories"></div>
+  </div>
+</div>
+
+<main class="wrap">
+  <div id="answer" aria-live="polite"></div>
+  <p class="count" id="count"></p>
+  <div id="list"></div>
+
+  <footer>
+    <p>Prices in Pakistani Rupees. Orders are confirmed on WhatsApp, where we
+       sort out delivery and payment with you directly.</p>
+    <p>Questions? <a id="waPlain" href="#">Message us on WhatsApp</a>
+       or call <a href="tel:+923215374880">+92 321 5374880</a>.</p>
+    <p class="meta">Open 9:00 am &ndash; 5:00 pm</p>
+  </footer>
+</main>
+
+<div class="bar" id="bar">
+  <div class="wrap">
+    <div class="tally">
+      <span class="n" id="cartN"></span>
+      <span class="t" id="cartT"></span>
+    </div>
+    <button class="clear" id="clear">Clear</button>
+    <a class="go" id="go" href="#">Order on WhatsApp</a>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
