@@ -1,4 +1,0 @@
-# For local Worker development only (npx wrangler dev).
-# Copy to .dev.vars and fill in. .dev.vars is gitignored.
-# In production the key is set with: npx wrangler secret put CEREBRAS_API_KEY
-CEREBRAS_API_KEY=
