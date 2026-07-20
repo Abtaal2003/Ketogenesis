@@ -9,6 +9,9 @@ Setup instructions: **[SETUP.md](SETUP.md)**
 
 ## How it works
 
+One Cloudflare Worker serves everything. Files in `public/` are served
+directly by Cloudflare; only `/ask` reaches the code.
+
 ```
 Browser
   |
@@ -19,9 +22,14 @@ Browser
   |     builds a wa.me link with the order pre-filled  ->  opens WhatsApp
   |
   '-- "Ask" (optional)
-        POST -> Cloudflare Worker -> retrieves 5 relevant items
-                                  -> Cerebras answers from those only
+        POST /ask -> same Worker -> retrieves 5 relevant items
+                                 -> Cerebras answers from those only
 ```
+
+Because the page and `/ask` share an origin there is no CORS, no
+preflight, and no allowed-origin setting to keep in sync when the domain
+changes. The Worker simply checks that a request's `Origin` matches the
+host it was sent to.
 
 The site works completely without the Worker. If `ASK_URL` is empty in
 `config.js`, the Ask button hides and everything else behaves normally.
@@ -39,8 +47,9 @@ instead of an answer. Nothing about the menu depends on a server staying up.
 | `public/menu.json` | Generated menu data. Do not edit by hand |
 | `tools/catalogue.csv` | The menu you actually maintain |
 | `tools/build_menu.py` | Turns the CSV into `menu.json` |
-| `worker/src/index.js` | Cloudflare Worker: retrieval + Cerebras |
-| `worker/src/menu.js` | Generated menu module for the Worker. Do not edit by hand |
+| `src/index.js` | The Worker: routes `/ask`, retrieval + Cerebras |
+| `src/menu.js` | Generated menu module for the Worker. Do not edit by hand |
+| `wrangler.toml` | Worker config: entry point, assets directory, vars |
 | `public/_headers` | Security headers Cloudflare Pages applies to every response |
 
 ## Updating the menu
@@ -52,7 +61,7 @@ python tools/build_menu.py
 ```
 
 One command writes both copies of the menu: `public/menu.json` for the
-site and `worker/src/menu.js` for the Worker. It prints how many items
+site and `src/menu.js` for the Worker. It prints how many items
 were written, flags rows it skipped, and warns about missing
 descriptions.
 
@@ -71,7 +80,7 @@ or a path relative to `public/`.
 
 ## Search
 
-`scoreItem()` in `public/app.js` and `score()` in `worker/src/index.js`
+`scoreItem()` in `public/app.js` and `score()` in `src/index.js`
 are deliberately identical: typing a query and pressing Ask must surface
 the same items. Both call `norm()` first, which lowercases and treats any
 punctuation as a space, so "brownie?" and "sugar-free" behave the same as
@@ -110,7 +119,7 @@ customer data is stored anywhere.
 
 ## Costs
 
-Everything here runs on free tiers: Cloudflare Pages for the site,
-Cloudflare Workers for Ask (100,000 requests/day, no cold starts),
-Cerebras for the model (1M tokens/day). The only optional cost is a
+Everything here runs on free tiers: one Cloudflare Worker with static
+assets (100,000 requests/day, no cold starts) and Cerebras for the model
+(1M tokens/day). The only optional cost is a
 custom domain.
