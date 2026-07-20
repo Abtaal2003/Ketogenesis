@@ -22,7 +22,7 @@ CSV_PATH = ROOT / "tools" / "catalogue.csv"
 OUT_PATH = ROOT / "public" / "menu.json"
 # The Worker gets a plain JS module rather than importing JSON. JSON
 # imports depend on bundler-specific behaviour; a .js module does not.
-WORKER_PATH = ROOT / "worker" / "src" / "menu.js"
+WORKER_PATH = ROOT / "src" / "menu.js"
 
 REQUIRED = ["category", "item", "description", "price"]
 
@@ -53,7 +53,7 @@ def main() -> int:
 
         items, skipped = [], 0
         for row in reader:
-            name = " ".join((row.get("item") or "").split())
+            name = (row.get("item") or "").strip()
             price = num(row.get("price"))
             if not name or price is None:
                 skipped += 1
