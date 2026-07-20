@@ -9,4 +9,4 @@ const ORDER_NUMBER = "923215374880";
 //   "https://ketogenesis-ask.your-name.workers.dev"
 // Leave it as "" and the Ask button stays hidden. Browsing and search
 // still work perfectly — the site is fully usable without it.
-const ASK_URL = "https://ketogenesis-ask.abtaal9703.workers.dev/";
+const ASK_URL = "https://ketogenesis-ask.abtaal9703.workers.dev";
