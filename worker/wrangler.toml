@@ -1,0 +1,17 @@
+name = "ketogenesis-ask"
+main = "src/index.js"
+compatibility_date = "2026-07-01"
+
+[vars]
+# Lock this to your Pages URL once deployed, e.g.
+# "https://ketogenesis.pages.dev". Leave as "*" while developing.
+ALLOWED_ORIGIN = "*"
+CEREBRAS_MODEL = "gpt-oss-120b"
+
+# Longest customer question accepted, in characters. Longer questions are
+# trimmed, not rejected. The real ceiling is the model's context window,
+# which leaves roughly 28,000 characters of headroom, so raise this freely.
+MAX_QUERY_CHARS = "1000"
+
+# CEREBRAS_API_KEY is NOT set here. It is a secret:
+#   npx wrangler secret put CEREBRAS_API_KEY
