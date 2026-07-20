@@ -18,6 +18,11 @@ enabled = true
 [vars]
 CEREBRAS_MODEL = "gpt-oss-120b"
 
+# The number the assistant gives out when someone asks how to reach a
+# person. Keep it identical to ORDER_NUMBER in public/config.js — that
+# one builds the wa.me link, this one goes into the prompt.
+ORDER_NUMBER = "923215374880"
+
 # Longest customer question accepted, in characters. Longer questions are
 # trimmed, not rejected. The real ceiling is the model's context window,
 # which leaves roughly 28,000 characters of headroom.
