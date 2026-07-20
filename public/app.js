@@ -1,5 +1,5 @@
 /* ------------------------------------------------------------------
-   Ketogenesis menu site.
+   Keto Genesis menu site.
 
    menu.json ships with the page, so browsing, filtering and search all
    run in the browser with no network calls. Only the Ask button talks
@@ -254,7 +254,7 @@ function formatAnswer(text) {
 }
 function bubble(html) {
   $("answer").innerHTML =
-    `<div class="answer"><span class="who">Ketogenesis</span>${html}</div>`;
+    `<div class="answer"><span class="who">Keto Genesis</span>${html}</div>`;
   revealAnswer();
 }
 
