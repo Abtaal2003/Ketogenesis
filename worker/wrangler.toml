@@ -5,7 +5,7 @@ compatibility_date = "2026-07-01"
 [vars]
 # Lock this to your Pages URL once deployed, e.g.
 # "https://ketogenesis.pages.dev". Leave as "*" while developing.
-ALLOWED_ORIGIN = "*"
+ALLOWED_ORIGIN = "https://ketogenesis.abtaal9703.workers.dev/"
 CEREBRAS_MODEL = "gpt-oss-120b"
 
 # Longest customer question accepted, in characters. Longer questions are
