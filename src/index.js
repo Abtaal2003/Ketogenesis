@@ -205,7 +205,16 @@ export default {
         },
         body: JSON.stringify({
           model: env.CEREBRAS_MODEL || MODEL,
-          max_completion_tokens: 200,
+          // gpt-oss-120b is a REASONING model: this budget covers its
+          // internal reasoning AND the visible answer. At 200 a harder
+          // question (translating Roman Urdu, comparing three items)
+          // spent the lot on reasoning and returned empty content, which
+          // read as "no answer" and fell back to the plain item list.
+          // The model's own ceiling is 40,960, so 2000 is still tiny.
+          // Brevity is enforced by the system prompt, not by this.
+          max_completion_tokens: 2000,
+          // Keep reasoning short: this is a menu lookup, not a maths problem.
+          reasoning_effort: "low",
           temperature: 0.3,
           messages: [
             { role: "system", content: SYSTEM_PROMPT },
@@ -223,7 +232,18 @@ export default {
       }
 
       const data = await res.json();
-      const answer = (data.choices?.[0]?.message?.content || "").trim();
+      const choice = data.choices?.[0];
+      const answer = (choice?.message?.content || "").trim();
+
+      if (!answer) {
+        // Silent before: an empty answer just became a fallback with no
+        // trace of why. finish_reason "length" means the token budget ran
+        // out, which is the one failure worth being able to spot.
+        console.log(
+          "Empty answer from model. finish_reason:", choice?.finish_reason,
+          "usage:", JSON.stringify(data.usage)
+        );
+      }
       return json({ answer: answer || null, items }, 200);
     } catch (err) {
       console.log("Cerebras call failed", err);
