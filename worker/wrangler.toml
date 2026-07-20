@@ -13,5 +13,5 @@ CEREBRAS_MODEL = "gpt-oss-120b"
 # which leaves roughly 28,000 characters of headroom, so raise this freely.
 MAX_QUERY_CHARS = "1000"
 
-# CEREBRAS_API_KEY is NOT set here. It is a secret:
+# CEREBRAS_API_KEY is NOT set here, it will be set on cloudflare. It is a secret:
 #   npx wrangler secret put CEREBRAS_API_KEY
