@@ -251,7 +251,7 @@ export default {
     // Why the split: the Cerebras free tier caps context at 8,192 tokens,
     // so the prompt can only afford a handful of full item descriptions.
     // Display has no such cost, so it can be more generous.
-    const DISPLAY_K = 12; // shown below the answer
+    const DISPLAY_K = 2000; // shown below the answer
     const GROUND_K = 5;   // sent into the prompt
     const items = retrieve(q, DISPLAY_K);
     const grounded = items.slice(0, GROUND_K);
