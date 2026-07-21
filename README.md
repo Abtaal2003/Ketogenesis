@@ -45,8 +45,8 @@ instead of an answer. Nothing about the menu depends on a server staying up.
 | `public/app.js` | Search, cart, WhatsApp handoff, Ask |
 | `public/config.js` | The two settings you edit: WhatsApp number, Worker URL |
 | `public/menu.json` | Generated menu data. Do not edit by hand |
-| `tools/catalogue.csv` | The menu you actually maintain |
-| `tools/build_menu.py` | Turns the CSV into `menu.json` |
+| `tools/catalogue.xlsx` | The menu you maintain — the Excel file you export from WhatsApp Business |
+| `tools/build_menu.mjs` | Reads the `.xlsx` and writes both generated menus |
 | `src/index.js` | The Worker: routes `/ask`, retrieval + Cerebras |
 | `src/menu.js` | Generated menu module for the Worker. Do not edit by hand |
 | `wrangler.toml` | Worker config: entry point, assets directory, vars |
@@ -54,20 +54,35 @@ instead of an answer. Nothing about the menu depends on a server staying up.
 
 ## Updating the menu
 
-Edit `tools/catalogue.csv`, then:
+The menu comes from one file: `tools/catalogue.xlsx`. To update the
+site, **replace that file and push** — nothing else:
+
+1. Export the latest catalogue from WhatsApp Business as an `.xlsx`.
+2. Rename it to `catalogue.xlsx` and replace `tools/catalogue.xlsx` in
+   the repo (drag-and-drop on GitHub works — *Add file → Upload files*).
+3. Commit. Cloudflare rebuilds automatically.
+
+On deploy, Cloudflare runs `node tools/build_menu.mjs` (wired up in
+`wrangler.toml`), which reads the spreadsheet and regenerates both
+`public/menu.json` and `src/menu.js`. You never edit those two by hand,
+and there is no CSV or Python step any more.
+
+The spreadsheet needs an item column and a price column; a category and
+description column are used if present. Header names are matched loosely,
+so `Collection` / `Category`, `Item Name` / `Name`, and `Price (PKR)` /
+`Price` all work. Rows with no name or price are skipped rather than
+breaking the build, and a missing category becomes "Other". If your
+descriptions carry macros inline (e.g. "macros per square: Fat 19.5g,
+Protein 3.1g, Carbs 2.3g, Energy 198kcal"), those figures are lifted
+into a clean macro strip automatically.
+
+To preview locally before pushing:
 
 ```bash
-python tools/build_menu.py
+npm install
+npm run menu     # regenerate from the .xlsx
+npm run dev      # serve with wrangler
 ```
-
-One command writes both copies of the menu: `public/menu.json` for the
-site and `src/menu.js` for the Worker. It prints how many items
-were written, flags rows it skipped, and warns about missing
-descriptions.
-
-Commit the CSV and both generated files. Rows with no name or no price
-are skipped rather than breaking the build, and a missing category
-becomes "Other".
 
 ### CSV columns
 

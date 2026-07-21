@@ -8,26 +8,28 @@ entirely optional.
 
 ## Phase 1 — Run it locally
 
-You need Python (for the build script only) and nothing else.
+You need Node (which you already have for Wrangler) and nothing else —
+no Python.
 
 ```bash
-cd ketogenesis-site
-python tools/build_menu.py
+npm install
+npm run menu
 ```
 
-That reads `tools/catalogue.csv` and writes two files: `public/menu.json`
-for the site and `worker/src/menu.js` for the Worker. Both are generated,
-so never edit them by hand.
+That reads `tools/catalogue.xlsx` and writes two files: `public/menu.json`
+for the site and `src/menu.js` for the Worker. Both are generated, so
+never edit them by hand.
 
-Now serve the `public` folder. The page fetches `menu.json`, so opening
-`index.html` directly from the filesystem will not work in most browsers.
+Now serve the site with Wrangler, which runs both the static files and
+the `/ask` endpoint together, exactly as in production:
 
 ```bash
-cd public
-python -m http.server 8000
+npm run dev
 ```
 
-Open http://localhost:8000
+Open the URL Wrangler prints (usually http://localhost:8787). Opening
+`index.html` directly from the filesystem will not work, because the page
+fetches `menu.json` over HTTP.
 
 Things to try: type "brownie", tap a category chip, add a few items, then
 tap **Order on WhatsApp** and check the message is pre-filled correctly.
@@ -275,20 +277,36 @@ against inference-docs.cerebras.ai — Cerebras rotates its public models.
 
 ## Phase 4 — The real menu
 
-Your uncle's WhatsApp Business catalogue lives in Meta **Commerce
-Manager** (business.facebook.com/commerce). Open the catalogue → Items →
-export to CSV. Rearrange the columns to match `tools/catalogue.csv`, fill
-in macros where he has them, then rebuild and push.
+The menu is just a spreadsheet: `tools/catalogue.xlsx`. To update it,
+replace that one file and push. Cloudflare rebuilds `menu.json` and
+`src/menu.js` from it on deploy — there is no CSV or Python step.
 
-The build script is forgiving with real exports: blank descriptions,
-blank macros, commas and quotes inside fields, and Urdu text all work.
-Rows missing a name or price are skipped and reported rather than
-silently included.
+**The update flow, start to finish:**
 
-Product photos: the export includes image URLs. Either paste those into
-the `image` column, or download them into `public/img/` and reference
-them as `img/filename.jpg`. Local copies are safer, since Meta's image
-URLs expire.
+1. Your uncle exports his catalogue from WhatsApp Business (or Commerce
+   Manager at business.facebook.com/commerce) as an `.xlsx`.
+2. Rename it `catalogue.xlsx`, replace `tools/catalogue.xlsx` in the repo
+   (on GitHub: *Add file → Upload files*, drop it in, commit).
+3. That's it — the push triggers a rebuild and the live site updates.
+
+The build script is forgiving with real exports. Column headers are
+matched loosely (`Collection`/`Category`, `Item Name`/`Name`,
+`Price (PKR)`/`Price`, `Description`). Only an item column and a price
+column are strictly required. Blank descriptions, Urdu text, commas and
+quotes inside cells, and non-breaking hyphens all work. Rows missing a
+name or price are skipped and reported rather than silently included.
+
+Macros can be written straight into the description text — e.g.
+"...; macros per square: Fat 19.5g, Protein 3.1g, Carbs 2.3g, Energy
+198kcal" — and the script lifts them into a clean macro strip while
+keeping the description searchable. An internal "Hidden item;" prefix
+from the WhatsApp export is stripped so customers never see it. If a
+future sheet has dedicated `carbs` / `fat` / `protein` / `kcal` /
+`serving` columns instead, those are used directly.
+
+Product photos: add an `image` column with either a URL or a filename
+like `img/keto-brownies.jpg`, downloaded into `public/img/`. Local
+copies are safer, since exported image URLs expire.
 
 ---
 

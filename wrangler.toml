@@ -9,6 +9,14 @@ name = "ketogenesis"
 main = "src/index.js"
 compatibility_date = "2026-07-01"
 
+# Runs before every deploy — including Cloudflare's Git-integration
+# builds, which invoke `npx wrangler deploy`. It regenerates
+# public/menu.json and src/menu.js from tools/catalogue.xlsx, so the
+# whole update flow is: replace the .xlsx on GitHub, push, done. No CSV
+# step, no Python, no editing generated files by hand.
+[build]
+command = "npm install && node tools/build_menu.mjs"
+
 [assets]
 directory = "./public"
 
