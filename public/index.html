@@ -15,14 +15,52 @@
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="styles.css">
+
+<!-- Set the theme BEFORE the page paints, so dark-mode visitors never see
+     a white flash. Reads the saved choice if there is one, otherwise the
+     system preference. Kept inline and tiny on purpose: it must run before
+     the body renders, so it can't wait for app.js to load. -->
+<script>
+  (function () {
+    try {
+      var saved = localStorage.getItem("theme");
+      var dark = saved ? saved === "dark"
+        : matchMedia("(prefers-color-scheme: dark)").matches;
+      if (dark) document.documentElement.setAttribute("data-theme", "dark");
+    } catch (e) {}
+  })();
+</script>
 </head>
 <body>
 
 <div class="wrap">
   <header>
-    <h1 class="brand">Keto <em>Genesis</em></h1>
-    <p class="tag"><b>The Fat Burning Fuel Factory</b><br>
-       Since 2020 &middot; Bahria Town Phase 7, Rawalpindi</p>
+    <div class="masthead">
+      <picture class="mark">
+        <source srcset="img/keto-mark.webp" type="image/webp">
+        <img src="img/keto-mark.png" alt="" width="72" height="40" fetchpriority="high">
+      </picture>
+      <div class="titles">
+        <h1 class="brand">Keto <em>Genesis</em></h1>
+        <p class="tag"><b>The Fat Burning Fuel Factory</b><br>
+           Since 2020 &middot; Bahria Town Phase 7, Rawalpindi</p>
+      </div>
+      <button class="theme" id="theme" type="button"
+              aria-label="Switch between light and dark mode" title="Toggle dark mode">
+        <svg class="sun" viewBox="0 0 24 24" aria-hidden="true" width="20" height="20">
+          <circle cx="12" cy="12" r="4.5" fill="currentColor"/>
+          <g stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="12" y1="1.5" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22.5"/>
+            <line x1="1.5" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22.5" y2="12"/>
+            <line x1="4.2" y1="4.2" x2="6" y2="6"/><line x1="18" y1="18" x2="19.8" y2="19.8"/>
+            <line x1="19.8" y1="4.2" x2="18" y2="6"/><line x1="6" y1="18" x2="4.2" y2="19.8"/>
+          </g>
+        </svg>
+        <svg class="moon" viewBox="0 0 24 24" aria-hidden="true" width="20" height="20">
+          <path fill="currentColor" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"/>
+        </svg>
+      </button>
+    </div>
   </header>
 </div>
 
@@ -39,7 +77,7 @@
   </div>
 </div>
 
-<main class="wrap">
+<main class="wrap-wide">
   <div id="answer" aria-live="polite"></div>
   <p class="count" id="count"></p>
   <div id="list"></div>

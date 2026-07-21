@@ -26,8 +26,38 @@ const rs = (n) => "Rs " + n.toLocaleString("en-PK");
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+/* ---------- theme ----------
+   The inline script in index.html already set the initial theme before
+   paint. Here we wire the toggle button and remember the choice. If the
+   visitor never taps the button, we keep following their OS setting even
+   if it changes mid-visit (e.g. an auto night switch). Once they choose
+   manually, that wins and persists. localStorage works here because this
+   is a real page on Cloudflare, not a sandboxed artifact. */
+function initTheme() {
+  const btn = $("theme");
+  if (!btn) return;
+
+  const apply = (dark) =>
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+
+  btn.addEventListener("click", () => {
+    const dark = document.documentElement.getAttribute("data-theme") !== "dark";
+    apply(dark);
+    try { localStorage.setItem("theme", dark ? "dark" : "light"); } catch {}
+  });
+
+  // Follow the OS only while no manual choice is stored.
+  try {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", (e) => {
+      if (!localStorage.getItem("theme")) apply(e.matches);
+    });
+  } catch {}
+}
+
 /* ---------- boot ---------- */
 async function boot() {
+  initTheme();
   try {
     const res = await fetch("menu.json", { cache: "no-cache" });
     if (!res.ok) throw new Error(res.status);
