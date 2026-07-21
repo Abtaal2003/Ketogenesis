@@ -5,13 +5,14 @@
  * only runs for requests that match no file, which in practice means
  * POST /ask.
  *
- * It exists for one reason: it holds the Cerebras API key, which must
- * never be shipped to a browser.
+ * It exists for one reason: it holds the LLM provider's API key, which
+ * must never be shipped to a browser.
  *
  * Flow:  POST /ask  { q: "kuch meetha hai?" }
  *        -> retrieve the most relevant items; show up to 12, and
  *           ground the model's answer on the top 5 of them
- *        -> ask Cerebras to answer using ONLY those grounding items
+ *        -> ask the selected provider (Cerebras or Gemini) to answer
+ *           using ONLY those grounding items
  *        -> { answer, items }
  *
  * Only the retrieved items go into the prompt, never the whole menu.
@@ -20,7 +21,31 @@
 
 import MENU from "./menu.js";
 
-const MODEL = "gpt-oss-120b";
+/* ---------- provider switch ----------
+   Which LLM backend answers /ask. Two are wired up:
+
+     "cerebras" — the original. Free tier: 1M tokens/day, gpt-oss-120b.
+     "gemini"   — Google Gemini. Free tier: no card, no expiry, generous
+                  daily limits on the Flash models.
+
+   Switch by setting LLM_PROVIDER in wrangler.toml [vars] to "cerebras"
+   or "gemini". If unset, it defaults to "cerebras" so nothing breaks.
+   Each provider reads its own API key secret, so you can have both keys
+   set and flip between them with just the var — no code change, no
+   redeploy of secrets.
+
+   Defaults live here; every value can be overridden from wrangler.toml
+   so you never have to touch code to retune. */
+const PROVIDER = "cerebras"; // fallback if env.LLM_PROVIDER is unset
+
+const CEREBRAS_MODEL = "gpt-oss-120b";
+
+// gemini-3.5-flash is the current recommended free-tier Flash model.
+// gemini-3.1-flash-lite is the lighter, higher-rate-limit alternative.
+// Confirm the exact model ID for your account in Google AI Studio, since
+// Google renames these between generations. Override with GEMINI_MODEL
+// in wrangler.toml.
+const GEMINI_MODEL = "gemini-3.5-flash";
 
 /* Longest customer question accepted, in characters. Anything longer is
    trimmed rather than rejected, so a rambling question still gets an
@@ -223,6 +248,113 @@ function json(body, status) {
   });
 }
 
+/* ---------- providers ----------
+   Each function takes the system prompt and the user message, calls its
+   API, and returns the same shape:
+
+     { answer, finishReason, usage }   on a successful HTTP call
+                                       (answer may still be "" — an empty
+                                        completion, which the caller logs)
+
+   A non-OK HTTP status or a network error throws, so the caller's single
+   try/catch degrades to showing the matched items either way. Keeping
+   the return shape identical is what lets the handler stay
+   provider-agnostic below.                                            */
+
+async function askCerebras(env, system, user) {
+  const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.CEREBRAS_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: env.CEREBRAS_MODEL || CEREBRAS_MODEL,
+      // gpt-oss-120b is a REASONING model: this budget covers its
+      // internal reasoning AND the visible answer. At 200 a harder
+      // question (translating Roman Urdu, comparing three items) spent
+      // the lot on reasoning and returned empty content. The model's own
+      // ceiling is 40,960, so 2000 is still tiny. Brevity is enforced by
+      // the system prompt, not by this.
+      max_completion_tokens: 2000,
+      // Keep reasoning short: this is a menu lookup, not a maths problem.
+      reasoning_effort: "low",
+      temperature: 0.3,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Cerebras HTTP ${res.status}: ${body}`);
+  }
+
+  const data = await res.json();
+  const choice = data.choices?.[0];
+  return {
+    answer: (choice?.message?.content || "").trim(),
+    finishReason: choice?.finish_reason,
+    usage: data.usage,
+  };
+}
+
+async function askGemini(env, system, user) {
+  const model = env.GEMINI_MODEL || GEMINI_MODEL;
+  // The key goes in the x-goog-api-key header, never the URL, so it does
+  // not end up in logs. system_instruction carries the system prompt;
+  // contents carries the customer's message.
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: "POST",
+      headers: {
+        "x-goog-api-key": env.GEMINI_API_KEY,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        system_instruction: { parts: [{ text: system }] },
+        contents: [{ role: "user", parts: [{ text: user }] }],
+        generationConfig: {
+          temperature: 0.3,
+          maxOutputTokens: 2000,
+        },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gemini HTTP ${res.status}: ${body}`);
+  }
+
+  const data = await res.json();
+  const cand = data.candidates?.[0];
+  // Gemini splits the reply into parts; join their text back together.
+  const answer = (cand?.content?.parts || [])
+    .map((p) => p.text || "")
+    .join("")
+    .trim();
+  return {
+    answer,
+    finishReason: cand?.finishReason,
+    usage: data.usageMetadata,
+  };
+}
+
+/* Pick the provider and confirm its key is present. Returns null when no
+   key is configured, so the caller can fall back to the item list. */
+function pickProvider(env) {
+  const name = (env.LLM_PROVIDER || PROVIDER).toLowerCase();
+  if (name === "gemini") {
+    return env.GEMINI_API_KEY ? { name, call: askGemini } : null;
+  }
+  // default / "cerebras"
+  return env.CEREBRAS_API_KEY ? { name: "cerebras", call: askCerebras } : null;
+}
+
 export default {
   async fetch(request, env) {
     const { pathname } = new URL(request.url);
@@ -248,70 +380,40 @@ export default {
     // Retrieve a wider set to SHOW the customer, but ground the model's
     // written answer on only the top few. The list is already sorted
     // best-first, so the grounding set is just its head — no re-scoring.
-    // Why the split: the Cerebras free tier caps context at 8,192 tokens,
-    // so the prompt can only afford a handful of full item descriptions.
-    // Display has no such cost, so it can be more generous.
+    // Why the split: a small prompt is cheap and fast on any provider,
+    // and Cerebras in particular caps context tightly, so the prompt only
+    // carries a handful of full item descriptions. Display has no such
+    // cost, so it can be generous.
     const DISPLAY_K = 10000; // shown below the answer
     const GROUND_K = 5;   // sent into the prompt
     const items = retrieve(q, DISPLAY_K);
     const grounded = items.slice(0, GROUND_K);
 
-    if (!env.CEREBRAS_API_KEY) {
-      // No key configured: still useful, just without the written answer.
+    const provider = pickProvider(env);
+    if (!provider) {
+      // No key for the selected provider: still useful, just without the
+      // written answer. The site shows the matched items instead.
       return json({ answer: null, items }, 200);
     }
 
+    const system = systemPrompt(env);
+    const user = `Products that may be relevant:\n${describe(grounded)}\n\nCustomer's message: ${q}`;
+
     try {
-      const res = await fetch("https://api.cerebras.ai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.CEREBRAS_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: env.CEREBRAS_MODEL || MODEL,
-          // gpt-oss-120b is a REASONING model: this budget covers its
-          // internal reasoning AND the visible answer. At 200 a harder
-          // question (translating Roman Urdu, comparing three items)
-          // spent the lot on reasoning and returned empty content, which
-          // read as "no answer" and fell back to the plain item list.
-          // The model's own ceiling is 40,960, so 2000 is still tiny.
-          // Brevity is enforced by the system prompt, not by this.
-          max_completion_tokens: 2000,
-          // Keep reasoning short: this is a menu lookup, not a maths problem.
-          reasoning_effort: "low",
-          temperature: 0.3,
-          messages: [
-            { role: "system", content: systemPrompt(env) },
-            {
-              role: "user",
-              content: `Products that may be relevant:\n${describe(grounded)}\n\nCustomer's message: ${q}`,
-            },
-          ],
-        }),
-      });
-
-      if (!res.ok) {
-        console.log("Cerebras error", res.status, await res.text());
-        return json({ answer: null, items }, 200);
-      }
-
-      const data = await res.json();
-      const choice = data.choices?.[0];
-      const answer = (choice?.message?.content || "").trim();
+      const { answer, finishReason, usage } = await provider.call(env, system, user);
 
       if (!answer) {
-        // Silent before: an empty answer just became a fallback with no
-        // trace of why. finish_reason "length" means the token budget ran
-        // out, which is the one failure worth being able to spot.
+        // An empty completion falls back to the item list. Log why: for
+        // Cerebras a finish_reason of "length" means the token budget ran
+        // out; for Gemini "MAX_TOKENS" or "SAFETY" is the usual cause.
         console.log(
-          "Empty answer from model. finish_reason:", choice?.finish_reason,
-          "usage:", JSON.stringify(data.usage)
+          `Empty answer from ${provider.name}. finishReason:`, finishReason,
+          "usage:", JSON.stringify(usage)
         );
       }
       return json({ answer: answer || null, items }, 200);
     } catch (err) {
-      console.log("Cerebras call failed", err);
+      console.log(`${provider.name} call failed`, err);
       // Degrade gracefully: the site shows the matched items instead.
       return json({ answer: null, items }, 200);
     }
