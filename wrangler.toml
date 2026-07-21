@@ -29,7 +29,7 @@ enabled = true
 # "cerebras" if omitted. The chosen provider must have its API key set
 # as a secret (see below); if it doesn't, the site still works and just
 # shows the matched items without a written answer.
-LLM_PROVIDER = "cerebras"
+LLM_PROVIDER = "gemini"
 
 # Model IDs per provider. Only the one matching LLM_PROVIDER is used.
 CEREBRAS_MODEL = "gpt-oss-120b"
