@@ -9,8 +9,9 @@
  * never be shipped to a browser.
  *
  * Flow:  POST /ask  { q: "kuch meetha hai?" }
- *        -> retrieve the 5 most relevant items from the menu
- *        -> ask Cerebras to answer using ONLY those items
+ *        -> retrieve the most relevant items; show up to 12, and
+ *           ground the model's answer on the top 5 of them
+ *        -> ask Cerebras to answer using ONLY those grounding items
  *        -> { answer, items }
  *
  * Only the retrieved items go into the prompt, never the whole menu.
@@ -244,7 +245,16 @@ export default {
     const limit = Number(env.MAX_QUERY_CHARS) || MAX_QUERY;
     if (q.length > limit) q = q.slice(0, limit);
 
-    const items = retrieve(q);
+    // Retrieve a wider set to SHOW the customer, but ground the model's
+    // written answer on only the top few. The list is already sorted
+    // best-first, so the grounding set is just its head — no re-scoring.
+    // Why the split: the Cerebras free tier caps context at 8,192 tokens,
+    // so the prompt can only afford a handful of full item descriptions.
+    // Display has no such cost, so it can be more generous.
+    const DISPLAY_K = 12; // shown below the answer
+    const GROUND_K = 5;   // sent into the prompt
+    const items = retrieve(q, DISPLAY_K);
+    const grounded = items.slice(0, GROUND_K);
 
     if (!env.CEREBRAS_API_KEY) {
       // No key configured: still useful, just without the written answer.
@@ -275,7 +285,7 @@ export default {
             { role: "system", content: systemPrompt(env) },
             {
               role: "user",
-              content: `Products that may be relevant:\n${describe(items)}\n\nCustomer's message: ${q}`,
+              content: `Products that may be relevant:\n${describe(grounded)}\n\nCustomer's message: ${q}`,
             },
           ],
         }),
