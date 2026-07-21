@@ -24,7 +24,19 @@ directory = "./public"
 enabled = true
 
 [vars]
+# Which LLM answers /ask: "cerebras" or "gemini". Change this one line
+# and redeploy to switch providers — no code change needed. Defaults to
+# "cerebras" if omitted. The chosen provider must have its API key set
+# as a secret (see below); if it doesn't, the site still works and just
+# shows the matched items without a written answer.
+LLM_PROVIDER = "cerebras"
+
+# Model IDs per provider. Only the one matching LLM_PROVIDER is used.
 CEREBRAS_MODEL = "gpt-oss-120b"
+# Current recommended free-tier Flash model. Confirm the exact ID for
+# your account in Google AI Studio — Google renames these across
+# generations (gemini-2.5-flash -> gemini-3.5-flash, etc.).
+GEMINI_MODEL = "gemini-3.5-flash"
 
 # The number the assistant gives out when someone asks how to reach a
 # person. Keep it identical to ORDER_NUMBER in public/config.js — that
@@ -36,6 +48,9 @@ ORDER_NUMBER = "923215374880"
 # which leaves roughly 28,000 characters of headroom.
 MAX_QUERY_CHARS = "1000"
 
-# CEREBRAS_API_KEY is a secret, never a var. Set it in the Cloudflare
-# dashboard (Settings -> Variables and Secrets -> Encrypt), or with:
+# API keys are secrets, never vars. Set whichever provider(s) you use in
+# the Cloudflare dashboard (Settings -> Variables and Secrets -> Encrypt),
+# or with:
 #   npx wrangler secret put CEREBRAS_API_KEY
+#   npx wrangler secret put GEMINI_API_KEY
+# You can set both and flip between them with LLM_PROVIDER above.
