@@ -22,8 +22,8 @@ Browser
   |     builds a wa.me link with the order pre-filled  ->  opens WhatsApp
   |
   '-- "Ask" (optional)
-        POST /ask -> same Worker -> retrieves 5 relevant items
-                                 -> Cerebras answers from those only
+        POST /ask -> same Worker -> retrieves the matching items
+                                 -> the LLM answers from the top 5 only
 ```
 
 Because the page and `/ask` share an origin there is no CORS, no
@@ -47,10 +47,10 @@ instead of an answer. Nothing about the menu depends on a server staying up.
 | `public/menu.json` | Generated menu data. Do not edit by hand |
 | `tools/catalogue.xlsx` | The menu you maintain — the Excel file you export from WhatsApp Business |
 | `tools/build_menu.mjs` | Reads the `.xlsx` and writes both generated menus |
-| `src/index.js` | The Worker: routes `/ask`, retrieval + Cerebras |
+| `src/index.js` | The Worker: routes `/ask`, retrieval + the LLM call |
 | `src/menu.js` | Generated menu module for the Worker. Do not edit by hand |
 | `wrangler.toml` | Worker config: entry point, assets directory, vars |
-| `public/_headers` | Security headers Cloudflare Pages applies to every response |
+| `public/_headers` | Security headers applied to every **static** response. Not applied to `/ask` — the Worker sets its own |
 
 ## Updating the menu
 
@@ -120,10 +120,17 @@ question.
 
 ## Security
 
-The Cerebras API key lives only as a Cloudflare Worker secret. It is
+The LLM API key — `GEMINI_API_KEY` or `CEREBRAS_API_KEY`, whichever
+`LLM_PROVIDER` selects — lives only as a Cloudflare Worker secret. It is
 never in `config.js`, never in the repository, and never in a response
-body — the Worker only ever returns `{ answer, items }`. `.dev.vars` is
+body: the Worker only ever returns `{ answer, items }`. `.dev.vars` is
 gitignored so a local key cannot be committed by accident.
+
+The headers in `public/_headers` cover static responses only. Cloudflare
+does not apply them to anything Worker code generates, so `/ask` sets its
+own `Cache-Control: no-store` and `X-Content-Type-Options: nosniff` in
+`json()`. If you add a response header there, add it in both places or
+it will silently cover only half the site.
 
 All customer text is escaped before it reaches the DOM, so a question
 containing HTML renders as text. `public/_headers` sets a content
@@ -134,6 +141,6 @@ customer data is stored anywhere.
 ## Costs
 
 Everything here runs on free tiers: one Cloudflare Worker with static
-assets (100,000 requests/day, no cold starts) and Cerebras for the model
-(1M tokens/day). The only optional cost is a
-custom domain.
+assets (100,000 requests/day, no cold starts) and whichever LLM
+`LLM_PROVIDER` selects — Gemini's Flash free tier (no card, no expiry) or
+Cerebras (1M tokens/day). The only optional cost is a custom domain.

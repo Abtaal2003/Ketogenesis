@@ -81,7 +81,7 @@ There are two routes, and they work quite differently. Pick one.
 - **Route B — a Pakistani domain** (`.pk`, `.com.pk`). Cheaper, more
   local credibility, but registered through PKNIC and requires a CNIC.
 
-Both connect to Cloudflare Pages the same way, and both give free HTTPS.
+Both connect to the Worker the same way, and both give free HTTPS.
 
 ---
 
@@ -362,16 +362,107 @@ vocabulary now would be solving an imaginary problem.
 
 ---
 
+## Troubleshooting
+
+Written for whoever is running the site day to day, not necessarily the
+person who built it. Everything here is diagnosable from the Cloudflare
+dashboard and a browser — nothing needs a local checkout.
+
+The one thing worth knowing up front: **the site is built to fail
+quietly.** If the AI part breaks, the menu keeps working and customers
+still see matching products. That is deliberate, but it means a broken
+Ask box looks a lot like a working one. Check it every so often rather
+than waiting to be told.
+
+### The menu didn't change after I uploaded a new spreadsheet
+
+The build runs on Cloudflare, not on your computer, so the file being on
+GitHub is not the same as the file being live.
+
+1. Open the repository on GitHub and confirm `tools/catalogue.xlsx`
+   really shows today's date under "Last commit".
+2. Go to **dash.cloudflare.com → Workers & Pages → ketogenesis →
+   Deployments**. There should be a deployment from a minute or two after
+   your upload. If it is red, open it and read the build log.
+3. The log ends with a line like `77 items across 11 categories`. If the
+   number is lower than you expect, rows were skipped — the log names
+   how many and why. A row is skipped when it has no item name or no
+   price.
+
+Hard-refresh the page before concluding it didn't work (Ctrl+Shift+R, or
+Cmd+Shift+R on a Mac). Browsers cache aggressively.
+
+### The page loads but the menu area is empty
+
+The site could not load `menu.json`. Almost always a failed build that
+left the file missing or malformed. Check the Deployments log as above.
+Re-deploying the last good version from the dashboard restores the site
+immediately while you sort out the spreadsheet.
+
+### The Ask box shows products but never writes an answer
+
+This is the failure the site hides on purpose, so it is worth
+recognising: you type a question, you get matching items underneath, but
+the sentence at the top always reads "Here are the closest matches from
+our menu."
+
+That means the AI call is not succeeding. Three causes, in order of
+likelihood:
+
+1. **The API key is missing or wrong.** Go to **ketogenesis → Settings →
+   Variables and Secrets** and confirm a secret exists whose name matches
+   the provider in use. `wrangler.toml` sets `LLM_PROVIDER`; if it says
+   `"gemini"` the secret must be `GEMINI_API_KEY`, if `"cerebras"` then
+   `CEREBRAS_API_KEY`. Having the *other* one set does not help.
+2. **The model ID has been renamed.** Google and Cerebras both retire
+   model names. Open Google AI Studio, look at which models the account
+   can actually call, and compare against `GEMINI_MODEL` in
+   `wrangler.toml`. Correct that one line, commit, done.
+3. **The free quota is exhausted for the day.** It resets; try again
+   tomorrow before changing anything.
+
+To see which of the three it is, open **ketogenesis → Logs** in the
+Cloudflare dashboard and ask the site a question with the log open. The
+Worker prints the reason: a missing key, an empty answer with the
+provider's own explanation, or the failed HTTP call.
+
+### Dark mode doesn't remember my choice
+
+`public/theme-init.js` is not loading. Open the page, press F12, and look
+at the Console tab for a red message mentioning Content Security Policy.
+If one is there, the script and the policy in `public/_headers` have
+drifted apart — the policy allows same-origin script files only, so
+`theme-init.js` must stay its own file and must not be pasted back into
+`index.html`.
+
+### None of the above
+
+Take a screenshot of the Deployments log or the browser console and send
+it to Abtaal. Nothing here is urgent enough to warrant guessing: the
+menu, the search and the WhatsApp ordering all keep working even when the
+AI layer is completely down, so the shop is never actually shut.
+
+---
+
 ## Cost summary
 
 | Item | Cost |
 |:-----|:-----|
-| Cloudflare Pages hosting | Rs 0 |
-| Cloudflare Worker (100k requests/day) | Rs 0 |
-| Cerebras (1M tokens/day) | Rs 0 |
+| Cloudflare Worker + static assets (100k requests/day) | Rs 0 |
+| Gemini free tier (no card, no expiry) | Rs 0 |
+| Cerebras (1M tokens/day), if you switch back | Rs 0 |
 | GitHub | Rs 0 |
 | Custom domain | optional, ~Rs 3,000–4,000/year |
 
-Never add a payment method to Cerebras. Without one, the free tier is a
-hard cap that simply stops working when exhausted. With one, it becomes
-a bill.
+**The two providers fail in opposite directions, so the rule differs.**
+
+*Cerebras:* never add a payment method. Without one the free tier is a
+hard cap that simply stops working when exhausted. With one it becomes a
+bill.
+
+*Gemini (what the site currently uses):* never enable billing on the
+Google Cloud project the API key belongs to. This one is counterintuitive
+— enabling billing does not give you a free tier followed by charges, it
+**removes** the free tier from that project and bills from the very first
+token. If you ever do want a paid Gemini setup, create a separate project
+for it and leave this one billing-free.
