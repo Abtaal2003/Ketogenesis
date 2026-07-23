@@ -31,6 +31,14 @@
      on dark. */
   --btn:#D42027;
   --btn-hover:#A5161C;
+
+  /* The masthead rule. Its own token because "as strong as the text" is
+     the right answer in light mode and the wrong one in dark: a dark line
+     on white recedes, but a light line on near-black blooms and becomes
+     the brightest thing on the page, pulling the eye to a divider instead
+     of the menu. Matching the light-mode contrast ratio would faithfully
+     reproduce that problem, so dark mode steps it back instead. */
+  --rule:#191413;
 }
 /* Dark mode. Warm near-black rather than pure black, off-white text, and
    the brand red brightened a touch so it still reads as an accent against
@@ -58,6 +66,10 @@
                            reads 3.54:1 against the page, so the button is
                            legible AND visible as a shape */
   --btn-hover:#DE343B;  /* hover brightens here rather than darkening */
+
+  --rule:#8A7C76;       /* 4.59:1 against the page: unmistakably a divider,
+                           but well under the text's 16.17:1 so it reads as
+                           structure rather than content */
 }
 *{box-sizing:border-box}
 body{
@@ -80,7 +92,7 @@ body{
 a{color:inherit}
 
 /* ---------- masthead ---------- */
-header{padding:30px 0 20px;border-bottom:2px solid var(--ink);
+header{padding:30px 0 20px;border-bottom:2px solid var(--rule);
        transition:border-color .25s ease}
 .masthead{display:flex;align-items:flex-start;gap:14px}
 .mark{flex:0 0 auto;display:block;line-height:0;margin-top:2px}
