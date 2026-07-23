@@ -67,14 +67,17 @@ On deploy, Cloudflare runs `node tools/build_menu.mjs` (wired up in
 `public/menu.json` and `src/menu.js`. You never edit those two by hand,
 and there is no CSV or Python step any more.
 
-The spreadsheet needs an item column and a price column; a category and
-description column are used if present. Header names are matched loosely,
-so `Collection` / `Category`, `Item Name` / `Name`, and `Price (PKR)` /
-`Price` all work. Rows with no name or price are skipped rather than
-breaking the build, and a missing category becomes "Other". If your
-descriptions carry macros inline (e.g. "macros per square: Fat 19.5g,
-Protein 3.1g, Carbs 2.3g, Energy 198kcal"), those figures are lifted
-into a clean macro strip automatically.
+The spreadsheet needs an item column and a price column — those two are
+the only ones actually required; everything else is optional. Header
+names are matched loosely, so `Collection` / `Category`, `Item Name` /
+`Name`, and `Price (PKR)` / `Price` all work. Rows with no name or price
+are skipped rather than breaking the build, and a missing category
+becomes "Other". If your descriptions carry macros inline (e.g. "macros
+per square: Fat 19.5g, Protein 3.1g, Carbs 2.3g, Energy 198kcal"), those
+figures are lifted into a clean macro strip automatically. If a future
+sheet has dedicated `carbs` / `fat` / `protein` / `kcal` / `serving` /
+`image` columns instead, those are used directly rather than parsed out
+of the description.
 
 To preview locally before pushing:
 
@@ -84,18 +87,14 @@ npm run menu     # regenerate from the .xlsx
 npm run dev      # serve with wrangler
 ```
 
-### CSV columns
-
-Required: `category`, `item`, `description`, `price`
-Optional: `carbs`, `fat`, `protein`, `kcal`, `serving`, `image`
-
 Blank optional cells are fine. An item with no macros shows no macro
 strip; an item with no image shows a text-only card. `image` takes a URL
 or a path relative to `public/`.
 
 ## Search
 
-`scoreItem()` in `public/app.js` and `score()` in `src/index.js`
+`scoreItem()` in `public/app.js` and `score()` in `src/index.js` (both at
+the repo root — there is no separate `worker/` folder)
 are deliberately identical: typing a query and pressing Ask must surface
 the same items. Both call `norm()` first, which lowercases and treats any
 punctuation as a space, so "brownie?" and "sugar-free" behave the same as

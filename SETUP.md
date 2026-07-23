@@ -44,18 +44,23 @@ Business number: country code, no `+`, no spaces. For example
 
 ## Phase 2 — Put it online (free)
 
-1. Push the project to a GitHub repository.
-2. Go to **dash.cloudflare.com** → Workers & Pages → **Create** → Pages →
-   **Connect to Git**, and pick the repo.
-3. Build settings:
-   - Framework preset: **None**
-   - Build command: leave empty
-   - Build output directory: `public`
-4. Save and deploy.
+This project is a single Cloudflare **Worker** with static assets
+(`main = "src/index.js"` plus an `[assets]` directory in `wrangler.toml`),
+not a classic Pages project — so it's connected under **Workers**, not
+**Pages**.
 
-You get a URL like `https://ketogenesis.pages.dev`. Every push to the
-repo redeploys automatically, so updating the menu is: edit the CSV, run
-the build script, commit, push.
+1. Push the project to a GitHub repository.
+2. Go to **dash.cloudflare.com** → Workers & Pages → **Create** →
+   **Workers** → **Connect to Git**, and pick the repo. Cloudflare reads
+   `wrangler.toml` directly, so there's no separate build-output-directory
+   field to fill in — the `[build]` command and `[assets]` directory in
+   the file are already all it needs.
+3. Save and deploy.
+
+You get a URL like `https://ketogenesis.<your-subdomain>.workers.dev`.
+Every push to the repo redeploys automatically, so updating the menu is:
+replace `tools/catalogue.xlsx`, commit, push — Cloudflare runs the build
+script itself (see "Updating the menu" in the README).
 
 ### Where to link it
 
@@ -111,7 +116,7 @@ Porkbun are both reasonable and honest about renewal pricing.
 
 **3. Connect it.**
 
-- *Bought from Cloudflare Registrar:* open your Pages project →
+- *Bought from Cloudflare Registrar:* open your Worker project →
   **Custom domains** → **Set up a domain** → type the domain → confirm.
   Cloudflare adds the DNS records itself. Live in a couple of minutes.
 - *Bought elsewhere:* add the domain to Cloudflare first
@@ -168,7 +173,7 @@ often easier than an international registrar.
 **5. Connect it.** Add the domain to Cloudflare (**Add a site**, free
 plan), then log into your reseller's control panel and change the
 nameservers to the two Cloudflare gives you. Once Cloudflare shows the
-domain as active, open your Pages project → **Custom domains** → **Set
+domain as active, open your Worker project → **Custom domains** → **Set
 up a domain**. HTTPS is issued automatically.
 
 Nameserver changes on `.pk` can take a few hours to propagate, so do
@@ -181,20 +186,17 @@ this when you are not in a rush.
 Register the domain in **your uncle's name and email**, not yours. It is
 his business asset, and you will be in Helsinki.
 
-#### Update two things after the domain goes live
+#### Nothing to update for the Ask box
 
-Easy to forget, and it will silently break the Ask box.
+Older versions of this project had an `ALLOWED_ORIGIN` setting that had
+to be updated by hand whenever the domain changed. That's gone: the
+Worker now checks same-origin dynamically (`sameOrigin()` in
+`src/index.js`), comparing each request's `Origin` header against
+whatever host it actually arrived on. A custom domain works automatically,
+with nothing to edit and nothing to redeploy.
 
-1. In `worker/wrangler.toml`, change `ALLOWED_ORIGIN` to the new domain
-   (for example `https://ketogenesis.pk`), then redeploy the Worker.
-   The old Pages URL will otherwise be the only origin accepted, and
-   every request from the new domain gets a 403.
-2. Re-check `public/_headers` if you ever move the Worker to a custom
-   domain too, since the content security policy there allows
-   `https://*.workers.dev` for `connect-src`.
-
-Then update the link in his Instagram bio and WhatsApp Business profile.
-The `pages.dev` URL keeps working alongside the custom domain, so
+Just update the link in his Instagram bio and WhatsApp Business profile.
+The `workers.dev` URL keeps working alongside the custom domain, so
 nothing breaks during the switch.
 
 ---
@@ -204,46 +206,46 @@ nothing breaks during the switch.
 This adds the free-text question box. Skip it if you want; the site is
 complete without it.
 
-You need a Cerebras API key from **cloud.cerebras.ai** (free, no card).
+There is only one Worker (the same one from Phase 2), so there is
+nothing separate to deploy and no URL to copy anywhere: `ASK_URL` in
+`public/config.js` is already set to `/ask`, a path on this same origin,
+and stays that way.
+
+Pick a provider and get a free API key, no card required:
+
+- **Gemini** — a key from **aistudio.google.com**. This is what
+  `wrangler.toml` is currently set to (`LLM_PROVIDER = "gemini"`).
+- **Cerebras** — a key from **cloud.cerebras.ai**, if you'd rather use
+  that instead. Switch to it by changing `LLM_PROVIDER` to `"cerebras"`
+  in `wrangler.toml`.
+
+Then, from the repo root:
 
 ```bash
-cd worker
 npm install
 npx wrangler login
-npx wrangler secret put CEREBRAS_API_KEY
+npx wrangler secret put GEMINI_API_KEY
+# or: npx wrangler secret put CEREBRAS_API_KEY, if using Cerebras
 npx wrangler deploy
 ```
 
-`wrangler deploy` prints a URL like
-`https://ketogenesis-ask.your-name.workers.dev`.
+Commit and push if you changed `LLM_PROVIDER`. The Ask button appears
+automatically once a key is set for whichever provider is selected —
+no other wiring needed.
 
-Put that URL into `public/config.js` as `ASK_URL`, then commit and push.
-The Ask button appears automatically.
+### Locking down the endpoint
 
-### Lock down the Worker
-
-Once the site is live, open `worker/wrangler.toml`, change
-`ALLOWED_ORIGIN` from `"*"` to your exact Pages URL (no trailing slash),
-and redeploy:
-
-```toml
-ALLOWED_ORIGIN = "https://ketogenesis.pages.dev"
-```
-
-The Worker checks this **server-side**, not just as a CORS header. CORS
-headers are only advisory: browsers honour them, but curl, scripts and
-bots ignore them completely. With `ALLOWED_ORIGIN` set, any request
-whose `Origin` header does not match is refused with a 403.
-
-One consequence: once locked down, `curl` tests stop working, because
-curl sends no `Origin` header. Do your curl testing first, or pass
-`-H "Origin: https://ketogenesis.pages.dev"`.
+There's no setting to change for this: `/ask` already only accepts
+requests whose `Origin` header matches the host it was sent to
+(`sameOrigin()` in `src/index.js`), checked server-side rather than as
+an advisory CORS header. It works the same on the `workers.dev` URL and
+on a custom domain, automatically, with nothing to keep in sync.
 
 ### Abuse protection
 
 Origin checking stops casual misuse but not a determined attacker, who
 can forge an `Origin` header. The exposure is limited: they could burn
-your daily Cerebras allowance, which stops the Ask box working until it
+your daily free-tier allowance, which stops the Ask box working until it
 resets. They cannot run up a bill, because every tier here is hard-capped
 rather than metered, and they cannot reach your API key, which never
 leaves the Worker.
@@ -254,24 +256,30 @@ Rules on the free plan. Add one rule on the Worker route, something like
 
 ### Testing the Worker before wiring it in
 
+Same-origin checking means curl needs an explicit `Origin` header —
+there is no unlocked state where it isn't required:
+
 ```bash
-curl -X POST https://ketogenesis-ask.your-name.workers.dev \
+curl -X POST https://ketogenesis.your-subdomain.workers.dev/ask \
   -H "Content-Type: application/json" \
+  -H "Origin: https://ketogenesis.your-subdomain.workers.dev" \
   -d '{"q":"do you have anything sweet"}'
 ```
 
 On Windows PowerShell use `curl.exe` and put the JSON in a file:
 
 ```
-curl.exe -X POST https://ketogenesis-ask.your-name.workers.dev -H "Content-Type: application/json" -d "@test.json"
+curl.exe -X POST https://ketogenesis.your-subdomain.workers.dev/ask -H "Content-Type: application/json" -H "Origin: https://ketogenesis.your-subdomain.workers.dev" -d "@test.json"
 ```
 
 You should get back `{"answer": "...", "items": [...]}`.
 
 If `answer` comes back `null` but `items` has results, the Worker is fine
-and the Cerebras call failed. Check the key with
-`npx wrangler secret list`, and check the model name in `wrangler.toml`
-against inference-docs.cerebras.ai — Cerebras rotates its public models.
+and the provider call failed (or its key was never set — check the
+Cloudflare dashboard logs, which now note this specifically). Check the
+key with `npx wrangler secret list`, and check the model name in
+`wrangler.toml` against the provider's docs — both Gemini and Cerebras
+rename their models across generations.
 
 ---
 
@@ -312,7 +320,8 @@ copies are safer, since exported image URLs expire.
 
 ## Tuning the search
 
-Both `public/app.js` and `worker/src/index.js` contain an identical
+Both `public/app.js` and `src/index.js` (repo root, no `worker/` folder)
+contain an identical
 `STOPWORDS` set: 246 common words that carry no meaning in a menu
 search. Without it, "anything **with** almond flour" scores every item
 whose description happens to contain "with".
