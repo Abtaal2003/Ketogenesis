@@ -27,8 +27,10 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 /* ---------- theme ----------
-   The inline script in index.html already set the initial theme before
-   paint. Here we wire the toggle button and remember the choice. If the
+   public/theme-init.js already set the initial theme before paint (it is
+   its own file rather than an inline block because the CSP forbids
+   inline scripts — see the comment in that file). Here we wire the
+   toggle button and remember the choice. If the
    visitor never taps the button, we keep following their OS setting even
    if it changes mid-visit (e.g. an auto night switch). Once they choose
    manually, that wins and persists. localStorage works here because this
@@ -218,8 +220,12 @@ function stillComposing(q) {
 }
 
 function setHint(questionMode) {
+  // Four states, not three: questionMode can now be reached with the Ask
+  // feature switched off, and telling someone to press a button that is
+  // not on the page would be worse than the blank menu this replaced.
   $("hint").textContent =
-    questionMode ? "That looks like a question. Press Ask."
+    questionMode && CFG_ASK ? "That looks like a question. Press Ask."
+    : questionMode ? "Keep typing to filter the menu."
     : CFG_ASK ? "Typing filters instantly. Press Ask for a written answer."
     : "Type to filter the menu instantly.";
 }
@@ -239,7 +245,15 @@ function render(rows) {
         .sort((a, b) => b.s - a.s)
         .map((r) => r.m);
 
-      if (!rows.length && CFG_ASK && stillComposing(q)) {
+      // Deliberately NOT gated on CFG_ASK. config.js documents setting
+      // ASK_URL to "" as a supported configuration where browsing and
+      // search still work — but with the gate here, a site in that state
+      // blanked the whole menu to "Nothing matches" on the first
+      // keystroke, because a 1-2 char query scores 0 everywhere. The
+      // safety net is a search concern; it must not depend on an
+      // unrelated feature being switched on. setHint() below picks the
+      // wording that suits whichever configuration is running.
+      if (!rows.length && stillComposing(q)) {
         rows = pool;            // mid-sentence, not a failed search
         questionMode = true;
       }
@@ -322,6 +336,18 @@ async function ask() {
     });
     const data = await res.json();
     if (ticket !== askTicket) return;      // superseded; drop this reply
+
+    // An error from the Worker still parses as JSON, so `res.json()`
+    // succeeding is not the same as the request having worked. Without
+    // this check a 403 or 400 fell through to the line below: the
+    // customer was told "Here are the closest matches" while `data.items`
+    // was undefined, so nothing re-rendered and the sentence pointed at a
+    // menu that had not changed.
+    if (!res.ok || data.error) {
+      bubble("We couldn't answer that just now. The menu below still works, "
+           + "or message us on WhatsApp.");
+      return;                              // `finally` still frees the button
+    }
 
     bubble(data.answer
       ? formatAnswer(data.answer)
