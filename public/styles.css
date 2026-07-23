@@ -39,6 +39,12 @@
      of the menu. Matching the light-mode contrast ratio would faithfully
      reproduce that problem, so dark mode steps it back instead. */
   --rule:#191413;
+
+  /* The horizontal gutter on both content wraps. A token, not a repeated
+     literal, because the ask bar's hairline is positioned to match it and
+     the two must agree at every width — a hardcoded copy would drift
+     silently the first time this changed. */
+  --gutter:18px;
 }
 /* Dark mode. Warm near-black rather than pure black, off-white text, and
    the brand red brightened a touch so it still reads as an accent against
@@ -84,8 +90,8 @@ body{
    answer, order bar) stayed at 660px and the page read as left-heavy,
    with the answer marooned beside empty space. Both wraps now widen
    together, so every row shares an edge. On phones they are identical. */
-.wrap{max-width:660px;margin:0 auto;padding:0 18px}
-.wrap-wide{max-width:660px;margin:0 auto;padding:0 18px}
+.wrap{max-width:660px;margin:0 auto;padding:0 var(--gutter)}
+.wrap-wide{max-width:660px;margin:0 auto;padding:0 var(--gutter)}
 @media (min-width:900px){
   .wrap,.wrap-wide{max-width:1000px}
 }
@@ -122,9 +128,26 @@ header{padding:30px 0 20px;border-bottom:2px solid var(--rule);
 .tag b{color:var(--red);font-weight:500}
 
 /* ---------- the one input ---------- */
+/* The bar itself spans the viewport, because a sticky bar has to: its
+   background is what stops the product grid showing through at the edges
+   as it scrolls underneath. The RULE is a different matter. As a border
+   on this element it ran the full width of the screen while everything it
+   separates — the chips above it, the cards below — sits in a centred
+   column, so the line overshot the layout at both ends. It now belongs to
+   the content track instead, drawn inside the wrap's gutter so it starts
+   and stops exactly where the cards and the masthead rule do. */
 .askbar{position:sticky;top:0;z-index:20;background:var(--paper);
-        padding:13px 0 10px;border-bottom:1px solid var(--line);
-        transition:background .25s ease,border-color .25s ease}
+        padding:13px 0 0;
+        transition:background .25s ease}
+.askbar > .wrap{position:relative;padding-bottom:10px}
+.askbar > .wrap::after{
+  content:"";position:absolute;bottom:0;height:1px;
+  /* Tied to the wraps' gutter, so the rule starts and stops exactly where
+     the cards do no matter what that value becomes. */
+  left:var(--gutter);right:var(--gutter);
+  background:var(--line);
+  transition:background .25s ease;
+}
 .field{display:flex;gap:8px}
 input[type=search]{
   flex:1;min-width:0;appearance:none;background:var(--wash);
@@ -277,5 +300,32 @@ footer{color:var(--dim);font-size:.78rem;line-height:1.7;padding:28px 0 12px;
 footer a{color:var(--red);font-weight:500}
 footer .meta{font-family:"IBM Plex Mono",monospace;font-size:.7rem;
              letter-spacing:.08em;text-transform:uppercase;margin-top:14px}
+
+/* ---------- touch targets ----------
+   Sized by input device, not viewport width. A narrow window on a laptop
+   still has a cursor and does not need 44px targets; a tablet has a
+   finger and does, at a width that a max-width query would miss. Apple
+   asks for 44px, Android 48px.
+
+   min-height rather than extra padding, so the target is exactly 44px
+   whether or not Archivo has loaded — padding alone leaves the height at
+   the mercy of font metrics, and the fallback face is a different size.
+
+   The chips are the important one. They are the primary navigation on a
+   phone AND they sit in a horizontally scrolling row, which is the worst
+   combination: a tap that lands slightly off is interpreted as the start
+   of a scroll, so the category simply does not change and the row feels
+   broken rather than mis-tapped.
+
+   Taller chips make the sticky ask bar taller too, on the device with the
+   least vertical room to spare, so the row's own padding tightens to give
+   about half of it back. */
+@media (pointer:coarse){
+  .chips{padding:6px 0 2px}
+  .chip{min-height:44px;display:flex;align-items:center;padding:0 16px}
+  .add{min-height:44px;display:inline-flex;align-items:center}
+  .go{min-height:44px;display:inline-flex;align-items:center}
+  .theme{width:44px;height:44px}
+}
 
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
