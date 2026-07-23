@@ -17,19 +17,10 @@
 <link rel="stylesheet" href="styles.css">
 
 <!-- Set the theme BEFORE the page paints, so dark-mode visitors never see
-     a white flash. Reads the saved choice if there is one, otherwise the
-     system preference. Kept inline and tiny on purpose: it must run before
-     the body renders, so it can't wait for app.js to load. -->
-<script>
-  (function () {
-    try {
-      var saved = localStorage.getItem("theme");
-      var dark = saved ? saved === "dark"
-        : matchMedia("(prefers-color-scheme: dark)").matches;
-      if (dark) document.documentElement.setAttribute("data-theme", "dark");
-    } catch (e) {}
-  })();
-</script>
+     a white flash. Must be a same-origin file, not an inline block: the
+     CSP below only allows script-src 'self', which silently blocks
+     inline scripts. See theme-init.js for details. -->
+<script src="theme-init.js"></script>
 </head>
 <body>
 

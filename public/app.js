@@ -136,7 +136,11 @@ function scoreItem(item, query) {
   const name = norm(item.name);
   const hay = norm(`${item.name} ${item.desc} ${item.cat}`);
 
-  if (hay.includes(q)) return 100;            // whole phrase present
+  // Gated to 3+ chars: below that, hay.includes(q) matches almost every
+  // item (nearly everything contains a given single letter), so a 1-2
+  // char query would score ~everything 100 instead of falling through to
+  // the empty-terms path below and correctly matching nothing yet.
+  if (q.length > 2 && hay.includes(q)) return 100;   // whole phrase present
 
   // Drop filler words. If the query is nothing but filler, fall back to
   // the raw words so a customer still gets something rather than nothing.
