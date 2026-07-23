@@ -1,5 +1,15 @@
 # For local development only (npx wrangler dev).
 # Copy to .dev.vars and fill in. .dev.vars is gitignored.
+#
+# Only ONE of these needs a value: whichever provider LLM_PROVIDER in
+# wrangler.toml is currently set to. Right now that is "gemini", so
+# GEMINI_API_KEY is the one that matters — CEREBRAS_API_KEY is only
+# needed if you switch LLM_PROVIDER back to "cerebras". Setting the
+# wrong one is the most common reason the Ask box stops writing an
+# answer (it still shows matched items either way).
+#
 # In production set it in the dashboard, or:
+#   npx wrangler secret put GEMINI_API_KEY
 #   npx wrangler secret put CEREBRAS_API_KEY
+GEMINI_API_KEY=
 CEREBRAS_API_KEY=
