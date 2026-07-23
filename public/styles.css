@@ -311,18 +311,17 @@ footer .meta{font-family:"IBM Plex Mono",monospace;font-size:.7rem;
    whether or not Archivo has loaded — padding alone leaves the height at
    the mercy of font metrics, and the fallback face is a different size.
 
-   The chips are the important one. They are the primary navigation on a
-   phone AND they sit in a horizontally scrolling row, which is the worst
-   combination: a tap that lands slightly off is interpreted as the start
-   of a scroll, so the category simply does not change and the row feels
-   broken rather than mis-tapped.
-
-   Taller chips make the sticky ask bar taller too, on the device with the
-   least vertical room to spare, so the row's own padding tightens to give
-   about half of it back. */
+   The category chips are deliberately NOT in here. They were tried at
+   44px and read as oversized: they are small, closely spaced pills, and
+   at full touch-target height they stop looking like filters and start
+   looking like buttons. They also sit in the sticky ask bar, so making
+   them taller costs vertical space on exactly the device that has least.
+   The residual risk is accepted: a tap landing slightly off in a
+   horizontally scrolling row is read as the start of a scroll, so the
+   category does not change. If that turns out to annoy real customers,
+   the fix is `.chip{min-height:40px;display:flex;align-items:center}`
+   here — enough to help without the chips reading as oversized. */
 @media (pointer:coarse){
-  .chips{padding:6px 0 2px}
-  .chip{min-height:44px;display:flex;align-items:center;padding:0 16px}
   .add{min-height:44px;display:inline-flex;align-items:center}
   .go{min-height:44px;display:inline-flex;align-items:center}
   .theme{width:44px;height:44px}
