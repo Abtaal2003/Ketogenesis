@@ -181,7 +181,11 @@ function score(item, query) {
   const name = norm(item.name);
   const hay = norm(`${item.name} ${item.desc} ${item.cat}`);
 
-  if (hay.includes(q)) return 100;            // whole phrase present
+  // Gated to 3+ chars: below that, hay.includes(q) matches almost every
+  // item (nearly everything contains a given single letter), so a 1-2
+  // char query would score ~everything 100 instead of falling through to
+  // the empty-terms path below and correctly matching nothing yet.
+  if (q.length > 2 && hay.includes(q)) return 100;   // whole phrase present
 
   // Drop filler words. If the query is nothing but filler, fall back to
   // the raw words so a customer still gets something rather than nothing.
@@ -392,7 +396,11 @@ export default {
     const provider = pickProvider(env);
     if (!provider) {
       // No key for the selected provider: still useful, just without the
-      // written answer. The site shows the matched items instead.
+      // written answer. The site shows the matched items instead. Log it,
+      // since this is otherwise indistinguishable in the response from a
+      // provider that's working but chose to say nothing.
+      const wanted = (env.LLM_PROVIDER || PROVIDER).toLowerCase();
+      console.log(`No API key configured for provider "${wanted}". Set it with: npx wrangler secret put ${wanted === "gemini" ? "GEMINI_API_KEY" : "CEREBRAS_API_KEY"}`);
       return json({ answer: null, items }, 200);
     }
 
