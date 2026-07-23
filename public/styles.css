@@ -12,6 +12,25 @@
   --line:#E7E0DC;
   --shadow:0 6px 20px rgba(25,20,19,.08);  /* card hover lift */
   --r:12px;
+
+  /* The order bar is its own surface, not a themed one. It needs to stay
+     dark in BOTH themes, so it cannot reuse --ink: that token means
+     "text colour", and text colour inverts between themes. Reusing it as
+     a background is what made the bar unreadable in dark mode. */
+  --bar:#191413;
+  --bar-ink:#FFFFFF;
+  --bar-dim:#B5ABA7;
+  --bar-line:transparent;
+
+  /* Filled buttons are their own token, separate from --red. --red is an
+     ACCENT colour and gets brightened in dark mode so it reads against a
+     dark page; that same brightening drops white-on-red to 3.41:1, which
+     fails AA at button text sizes. A solid fill sits behind white text
+     and has the opposite requirement, so it keeps the logo red in both
+     themes. Only the hover direction differs: darken on light, brighten
+     on dark. */
+  --btn:#D42027;
+  --btn-hover:#A5161C;
 }
 /* Dark mode. Warm near-black rather than pure black, off-white text, and
    the brand red brightened a touch so it still reads as an accent against
@@ -27,6 +46,18 @@
   --wash:#211C1A;       /* raised surface */
   --line:#332B28;
   --shadow:0 6px 22px rgba(0,0,0,.45);
+
+  /* Lifted a little off the page (#171312) so the bar still reads as a
+     separate surface, with a hairline to define its top edge. */
+  --bar:#26201D;
+  --bar-ink:#F4EFEC;
+  --bar-dim:#A79E99;
+  --bar-line:#3A322E;
+
+  --btn:#D42027;        /* unchanged: white on it is 5.20:1, and it still
+                           reads 3.54:1 against the page, so the button is
+                           legible AND visible as a shape */
+  --btn-hover:#DE343B;  /* hover brightens here rather than darkening */
 }
 *{box-sizing:border-box}
 body{
@@ -36,13 +67,15 @@ body{
   -webkit-font-smoothing:antialiased;
   transition:background .25s ease,color .25s ease;
 }
-/* The wrap stays narrow for reading (header, ask bar, answer), but the
-   menu itself opts into a wider track on big screens via .wrap-wide, so
-   the item grid has room. On phones both are identical. */
+/* One track, not two. The menu grid needs width on a laptop, and when
+   only it got that width everything else (masthead, ask bar, chips,
+   answer, order bar) stayed at 660px and the page read as left-heavy,
+   with the answer marooned beside empty space. Both wraps now widen
+   together, so every row shares an edge. On phones they are identical. */
 .wrap{max-width:660px;margin:0 auto;padding:0 18px}
 .wrap-wide{max-width:660px;margin:0 auto;padding:0 18px}
 @media (min-width:900px){
-  .wrap-wide{max-width:1000px}
+  .wrap,.wrap-wide{max-width:1000px}
 }
 a{color:inherit}
 
@@ -88,26 +121,48 @@ input[type=search]{
 }
 input[type=search]::placeholder{color:var(--dim)}
 input[type=search]:focus-visible{outline:2px solid var(--red);outline-offset:1px}
-.ask{flex:0 0 auto;background:var(--red);color:#fff;border:0;
+.ask{flex:0 0 auto;background:var(--btn);color:#fff;border:0;
      border-radius:var(--r);padding:0 20px;font:inherit;font-weight:700;
      letter-spacing:.02em;cursor:pointer}
-.ask:hover{background:var(--red-dark)}
+.ask:hover{background:var(--btn-hover)}
 .ask:disabled{opacity:.35;cursor:default}
 .ask:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 .hint{font-size:.75rem;color:var(--dim);margin:8px 2px 0}
 
-.chips{display:flex;gap:7px;overflow-x:auto;padding:11px 0 3px;scrollbar-width:none}
+/* Twelve categories overflow the row at every width, and with the
+   scrollbar hidden there was nothing to say so — the last chip simply
+   ended at the edge and looked like the end of the list. A soft fade on
+   the trailing edge implies more content. app.js adds .more only while
+   the row can actually scroll further, so the fade disappears at the end
+   of the row and never appears when everything already fits. The mask is
+   anchored to the element box, not the scrolled content, so it stays put
+   as the chips move under it. */
+.chips{display:flex;gap:7px;overflow-x:auto;padding:11px 0 3px;
+       scrollbar-width:none;scroll-behavior:smooth}
 .chips::-webkit-scrollbar{display:none}
+.chips.more{
+  -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 46px),transparent);
+          mask-image:linear-gradient(to right,#000 calc(100% - 46px),transparent);
+}
 .chip{flex:0 0 auto;background:var(--paper);color:var(--dim);
       border:1px solid var(--line);border-radius:999px;padding:6px 14px;
       font:inherit;font-size:.82rem;font-weight:500;cursor:pointer;white-space:nowrap}
-.chip[aria-pressed=true]{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* --paper, never #fff: --ink is the text colour and flips to off-white in
+   dark mode, so a hardcoded white foreground on it was white-on-white.
+   Pairing the two tokens keeps this a true inversion in either theme. */
+.chip[aria-pressed=true]{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .chip:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 
-/* ---------- answer ---------- */
+/* ---------- answer ----------
+   No max-width of its own. It used to be capped at 660px while the item
+   grid beside it ran to 1000px, which left the answer marooned against
+   empty space on a laptop — the one thing that looked wrong on desktop
+   but fine on a phone. Letting the parent track set the width makes it a
+   full-width callout sitting squarely above the grid. Answers are capped
+   at 60 words by the prompt, so this is two lines, not a wall of text. */
 .answer{margin:16px 0 4px;padding:15px 17px;background:var(--red-wash);
         border-left:4px solid var(--red);border-radius:0 var(--r) var(--r) 0;
-        font-size:.95rem;line-height:1.55;white-space:pre-wrap;max-width:660px}
+        font-size:.95rem;line-height:1.55;white-space:pre-wrap}
 .answer .who{font-family:"IBM Plex Mono",monospace;font-size:.66rem;
              letter-spacing:.16em;text-transform:uppercase;color:var(--red);
              display:block;margin-bottom:7px;font-weight:500}
@@ -184,24 +239,25 @@ input[type=search]:focus-visible{outline:2px solid var(--red);outline-offset:1px
 .add{margin-top:12px;background:var(--paper);color:var(--ink);
      border:1.5px solid var(--ink);border-radius:var(--r);padding:8px 16px;
      font:inherit;font-size:.85rem;font-weight:600;cursor:pointer}
-.add:hover{background:var(--ink);color:#fff}
+.add:hover{background:var(--ink);color:var(--paper)}  /* see chip note above */
 .add:focus-visible{outline:2px solid var(--red);outline-offset:2px}
 .empty{padding:44px 0;color:var(--dim);text-align:center;font-size:.92rem;line-height:1.6}
 
 /* ---------- order bar ---------- */
-.bar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--ink);
-     color:#fff;transform:translateY(110%);transition:transform .22s ease}
+.bar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--bar);
+     color:var(--bar-ink);border-top:1px solid var(--bar-line);
+     transform:translateY(110%);transition:transform .22s ease}
 .bar.up{transform:none}
 .bar .wrap{display:flex;align-items:center;gap:12px;padding-top:13px;padding-bottom:13px}
 .tally{flex:1;min-width:0}
 .tally .n{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.12em;
-          text-transform:uppercase;color:#B5ABA7;display:block}
+          text-transform:uppercase;color:var(--bar-dim);display:block}
 .tally .t{font-family:Archivo,sans-serif;font-weight:700;font-size:1.2rem}
-.go{background:var(--red);color:#fff;text-decoration:none;border-radius:var(--r);
+.go{background:var(--btn);color:#fff;text-decoration:none;border-radius:var(--r);
     padding:12px 18px;font-weight:700;font-size:.92rem;white-space:nowrap}
-.go:hover{background:var(--red-dark)}
-.go:focus-visible{outline:2px solid #fff;outline-offset:2px}
-.clear{background:none;border:0;color:#B5ABA7;font:inherit;font-size:.8rem;
+.go:hover{background:var(--btn-hover)}
+.go:focus-visible{outline:2px solid var(--bar-ink);outline-offset:2px}
+.clear{background:none;border:0;color:var(--bar-dim);font:inherit;font-size:.8rem;
        cursor:pointer;text-decoration:underline}
 
 footer{color:var(--dim);font-size:.78rem;line-height:1.7;padding:28px 0 12px;

@@ -74,6 +74,7 @@ async function boot() {
   $("chips").innerHTML = cats.map((c) =>
     `<button class="chip" aria-pressed="${c === "All"}" data-cat="${esc(c)}">${esc(c)}</button>`
   ).join("");
+  initChipScroll();
 
   $("askBtn").hidden = !CFG_ASK;
   setHint(false);
@@ -81,6 +82,31 @@ async function boot() {
 
   render();
   renderCart();
+}
+
+/* ---------- category row ----------
+   The chip row scrolls horizontally, but its scrollbar is hidden, so
+   nothing indicated that more categories existed past the right edge —
+   the row just appeared to end. CSS draws a fade there whenever .more is
+   set; this decides when that is true.
+
+   "More to the right" rather than "is scrollable", so the fade clears
+   once the customer reaches the end and never shows at all on a screen
+   wide enough to fit every chip. The 2px slack absorbs the fractional
+   scroll positions browsers report at high zoom or on retina displays,
+   which would otherwise leave the fade stuck on at the end of the row. */
+function initChipScroll() {
+  const row = $("chips");
+  if (!row) return;
+
+  const update = () => {
+    const more = row.scrollWidth - row.clientWidth - row.scrollLeft > 2;
+    row.classList.toggle("more", more);
+  };
+
+  row.addEventListener("scroll", update, { passive: true });
+  addEventListener("resize", update);
+  update();
 }
 
 /* ---------- local search ----------
