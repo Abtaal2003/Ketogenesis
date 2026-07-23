@@ -115,10 +115,16 @@ function tidyDescription(desc) {
 
 function num(value) {
   if (value === null || value === undefined) return null;
-  // Strip currency words/symbols and commas: "Rs 2,200" -> 2200
-  const s = String(value).replace(/[^0-9.]/g, "").trim();
-  if (!s) return null;
-  const n = Number(s);
+  // Pull out the first number, e.g. "Rs 2,200" -> 2200. Deliberately a
+  // match, not a strip-and-join: stripping every non-digit character
+  // (the previous approach) turns a price range like "1000-1200" into
+  // "10001200" by silently deleting the hyphen between two valid
+  // numbers, rather than either rejecting it or picking one side. This
+  // takes the first number in the cell, so "1000-1200" reads as 1000 and
+  // "Rs 2,200" still reads as 2200.
+  const m = String(value).match(/[0-9][0-9,]*(?:\.[0-9]+)?/);
+  if (!m) return null;
+  const n = Number(m[0].replace(/,/g, ""));
   return Number.isFinite(n) ? n : null;
 }
 
