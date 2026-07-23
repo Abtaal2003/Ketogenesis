@@ -20,7 +20,8 @@
   --bar:#191413;
   --bar-ink:#FFFFFF;
   --bar-dim:#B5ABA7;
-  --bar-line:transparent;
+  --bar-line:rgba(255,255,255,.16);
+  --bar-ctl:rgba(255,255,255,.10);   /* control fill inside the bar */
 
   /* Filled buttons are their own token, separate from --red. --red is an
      ACCENT colour and gets brightened in dark mode so it reads against a
@@ -67,6 +68,7 @@
   --bar-ink:#F4EFEC;
   --bar-dim:#A79E99;
   --bar-line:#3A322E;
+  --bar-ctl:rgba(255,255,255,.09);
 
   --btn:#D42027;        /* unchanged: white on it is 5.20:1, and it still
                            reads 3.54:1 against the page, so the button is
@@ -283,8 +285,42 @@ input[type=search]:focus-visible{outline:2px solid var(--red);outline-offset:1px
      color:var(--bar-ink);border-top:1px solid var(--bar-line);
      transform:translateY(110%);transition:transform .22s ease}
 .bar.up{transform:none}
-.bar .wrap{display:flex;align-items:center;gap:12px;padding-top:13px;padding-bottom:13px}
-.tally{flex:1;min-width:0}
+.bar .wrap{padding-bottom:13px}
+.barrow{display:flex;align-items:center;gap:12px;padding-top:13px}
+
+/* ---------- order review panel ----------
+   Capped and scrollable: a 20-line order must not push the Order button
+   off a phone screen. vh rather than a fixed height so it adapts to
+   landscape, where there is far less room. */
+.panel{max-height:min(46vh,320px);overflow-y:auto;
+       border-bottom:1px solid var(--bar-line)}
+.panel[hidden]{display:none}
+.lines{list-style:none;margin:0;padding:8px 0}
+.line{display:flex;align-items:center;gap:10px;padding:6px 0}
+/* The name yields first: long product names truncate rather than pushing
+   the quantity controls off the right edge, which is the failure mode
+   that matters on a narrow screen. */
+.ln{flex:1;min-width:0;font-size:.9rem;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lt{font-family:"IBM Plex Mono",monospace;font-size:.8rem;
+    color:var(--bar-dim);white-space:nowrap}
+.qty{display:flex;align-items:center;gap:3px;flex:0 0 auto}
+.q,.rm{background:var(--bar-ctl);border:0;color:var(--bar-ink);border-radius:8px;
+       width:30px;height:30px;font:inherit;font-size:1.05rem;line-height:1;
+       cursor:pointer;padding:0;display:grid;place-items:center}
+.rm{background:none;color:var(--bar-dim);margin-left:5px}
+.q:hover,.rm:hover{background:var(--bar-ctl);color:var(--bar-ink)}
+.q:focus-visible,.rm:focus-visible{outline:2px solid var(--bar-ink);outline-offset:2px}
+.qn{min-width:22px;text-align:center;font-family:"IBM Plex Mono",monospace;
+    font-size:.85rem}
+
+/* The tally is the panel's toggle, so it has to be a real button. */
+.tally{flex:1;min-width:0;display:flex;align-items:center;gap:8px;
+       background:none;border:0;padding:0;color:inherit;font:inherit;
+       text-align:left;cursor:pointer}
+.tally:focus-visible{outline:2px solid var(--bar-ink);outline-offset:3px}
+.caret{flex:0 0 auto;color:var(--bar-dim);transition:transform .18s ease}
+.tally[aria-expanded="false"] .caret{transform:rotate(180deg)}
 .tally .n{font-family:"IBM Plex Mono",monospace;font-size:.68rem;letter-spacing:.12em;
           text-transform:uppercase;color:var(--bar-dim);display:block}
 .tally .t{font-family:Archivo,sans-serif;font-weight:700;font-size:1.2rem}
@@ -322,6 +358,7 @@ footer .meta{font-family:"IBM Plex Mono",monospace;font-size:.7rem;
    the fix is `.chip{min-height:40px;display:flex;align-items:center}`
    here — enough to help without the chips reading as oversized. */
 @media (pointer:coarse){
+  .q,.rm{width:40px;height:40px}
   .add{min-height:44px;display:inline-flex;align-items:center}
   .go{min-height:44px;display:inline-flex;align-items:center}
   .theme{width:44px;height:44px}

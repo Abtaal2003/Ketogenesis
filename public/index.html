@@ -84,12 +84,29 @@
 
 <div class="bar" id="bar">
   <div class="wrap">
-    <div class="tally">
-      <span class="n" id="cartN"></span>
-      <span class="t" id="cartT"></span>
+
+    <!-- Review panel. Collapsed by default: the bar's job is to stay out of
+         the way until someone wants to check what they have picked. -->
+    <div class="panel" id="panel" hidden>
+      <ul class="lines" id="lines"></ul>
     </div>
-    <button class="clear" id="clear">Clear</button>
-    <a class="go" id="go" href="#">Order on WhatsApp</a>
+
+    <div class="barrow">
+      <button class="tally" id="tally" type="button"
+              aria-expanded="false" aria-controls="panel">
+        <span class="tallytext">
+          <span class="n" id="cartN"></span>
+          <span class="t" id="cartT"></span>
+        </span>
+        <svg class="caret" viewBox="0 0 24 24" aria-hidden="true" width="16" height="16">
+          <path d="M6 15l6-6 6 6" fill="none" stroke="currentColor"
+                stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+      <button class="clear" id="clear">Clear</button>
+      <a class="go" id="go" href="#">Order on WhatsApp</a>
+    </div>
+
   </div>
 </div>
 

@@ -70,6 +70,11 @@ async function boot() {
     return;
   }
 
+  // Restore before anything renders, and reconcile before anything is
+  // shown or priced, so a stale line never reaches the screen at all.
+  cart = loadCart();
+  reconcileCart();
+
   const cats = ["All", ...new Set(MENU.map((m) => m.cat))];
   $("chips").innerHTML = cats.map((c) =>
     `<button class="chip" aria-pressed="${c === "All"}" data-cat="${esc(c)}">${esc(c)}</button>`
@@ -297,7 +302,55 @@ function render(rows) {
          Try another word${CFG_ASK ? ", or press Ask" : ""}.</p>`;
 }
 
-/* ---------- order ---------- */
+/* ---------- order ----------
+   The cart survives a reload. On a phone, tabbing away to check something
+   and coming back is completely normal, and losing a half-built order to
+   that is the kind of thing people do not retry — they just leave.
+
+   Persisting it introduces a problem that did not exist while the cart was
+   in memory: a saved order can outlive a catalogue update. Someone leaves
+   the tab open for a week, the .xlsx is republished with new prices, and
+   the WhatsApp message quotes figures nobody honours any more. So the
+   saved cart is never trusted as-is; reconcileCart() rebuilds every line
+   against the menu that actually loaded. */
+const CART_KEY = "cart";
+
+function saveCart() {
+  try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch {}
+}
+
+/* Anything in storage is untrusted input: it may be from an older version
+   of this code, hand-edited, or corrupt. Validate shape rather than
+   assuming, and fall back to an empty cart on anything unexpected. */
+function loadCart() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .filter((c) => c && typeof c.name === "string" && typeof c.cat === "string"
+                       && Number.isFinite(+c.qty) && +c.qty > 0)
+      .map((c) => ({ name: c.name, cat: c.cat, price: +c.price,
+                     qty: Math.min(99, Math.floor(+c.qty)) }));
+  } catch { return []; }
+}
+
+/* Price and existence both come from the live menu, never from storage.
+   A line whose product has been removed from the catalogue is dropped
+   rather than kept at its old price — quoting a discontinued item is
+   worse than silently losing it. */
+function reconcileCart() {
+  cart = cart.reduce((keep, c) => {
+    const live = MENU.find((m) => m.name === c.name && m.cat === c.cat);
+    if (live) keep.push({ name: c.name, cat: c.cat, price: live.price, qty: c.qty });
+    return keep;
+  }, []);
+}
+
+function setPanel(open) {
+  $("panel").hidden = !open;
+  $("tally").setAttribute("aria-expanded", String(open));
+}
+
 function renderCart() {
   const n = cart.reduce((s, c) => s + c.qty, 0);
   const total = cart.reduce((s, c) => s + c.qty * c.price, 0);
@@ -306,10 +359,32 @@ function renderCart() {
   $("cartN").textContent = `${n} item${n === 1 ? "" : "s"} in your order`;
   $("cartT").textContent = rs(total);
 
+  $("lines").innerHTML = cart.map((c) => `<li class="line">
+      <span class="ln">${esc(c.name)}</span>
+      <span class="lt">${rs(c.qty * c.price)}</span>
+      <span class="qty">
+        <button class="q" data-op="dec" data-name="${esc(c.name)}" data-cat="${esc(c.cat)}"
+                type="button" aria-label="One fewer ${esc(c.name)}">&minus;</button>
+        <span class="qn">${c.qty}</span>
+        <button class="q" data-op="inc" data-name="${esc(c.name)}" data-cat="${esc(c.cat)}"
+                type="button" aria-label="One more ${esc(c.name)}">+</button>
+        <button class="rm" data-op="rm" data-name="${esc(c.name)}" data-cat="${esc(c.cat)}"
+                type="button" aria-label="Remove ${esc(c.name)}">&times;</button>
+      </span>
+    </li>`).join("");
+
+  // Nothing left to review, so the panel must not stay open behind the
+  // bar as it slides away.
+  if (!n) setPanel(false);
+
   const lines = cart.map((c) => `- ${c.name} x${c.qty} — ${rs(c.qty * c.price)}`);
   const text = "Assalam o Alaikum! I'd like to place this order:\n\n"
     + lines.join("\n") + `\nTotal: ${rs(total)}`;
   $("go").href = `https://wa.me/${CFG_NUMBER}?text=${encodeURIComponent(text)}`;
+
+  // Every mutation path ends here, so this is the one place that needs to
+  // persist. Keeping it single-sited is why no caller has to remember to.
+  saveCart();
 }
 
 /* ---------- ask ----------
@@ -430,6 +505,29 @@ $("list").addEventListener("click", (e) => {
                    price: +b.dataset.price, qty: 1 });
   b.textContent = "Added ✓";
   setTimeout(() => (b.textContent = "Add to order"), 900);
+  renderCart();
+});
+
+$("tally").addEventListener("click", () => setPanel($("panel").hidden));
+
+/* One delegated handler for all three controls. Lines are matched on
+   name + category, the same key the Add button uses, rather than on an
+   index — indices shift the moment a line is removed, and the markup is
+   rebuilt on every change. */
+$("lines").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-op]");
+  if (!b) return;
+  const i = cart.findIndex(
+    (c) => c.name === b.dataset.name && c.cat === b.dataset.cat);
+  if (i < 0) return;
+
+  const op = b.dataset.op;
+  if (op === "inc") cart[i].qty = Math.min(99, cart[i].qty + 1);
+  else if (op === "dec" && cart[i].qty > 1) cart[i].qty--;
+  // "rm", or "dec" at a quantity of one: both mean remove the line, which
+  // is what people expect from a minus at 1 rather than it going inert.
+  else cart.splice(i, 1);
+
   renderCart();
 });
 
