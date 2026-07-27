@@ -22,23 +22,34 @@
 import MENU from "./menu.js";
 
 /* ---------- provider switch ----------
-   Which LLM backend answers /ask. Two are wired up:
+   Which LLM backend answers /ask. Three are wired up:
 
      "cerebras" — the original. Free tier: 1M tokens/day, gpt-oss-120b.
      "gemini"   — Google Gemini. Free tier: no card, no expiry, generous
                   daily limits on the Flash models.
+     "groq"     — Groq. Free tier: no card, rate-limited (not metered)
+                  daily quota, runs the same gpt-oss-120b as Cerebras but
+                  on Groq's own LPU hardware. Useful as a fallback when
+                  Gemini returns 503 "high demand" or Cerebras' quota is
+                  spent for the day.
 
-   Switch by setting LLM_PROVIDER in wrangler.toml [vars] to "cerebras"
-   or "gemini". If unset, it defaults to "cerebras" so nothing breaks.
-   Each provider reads its own API key secret, so you can have both keys
-   set and flip between them with just the var — no code change, no
-   redeploy of secrets.
+   Switch by setting LLM_PROVIDER in wrangler.toml [vars] to "cerebras",
+   "gemini", or "groq". If unset, it defaults to "cerebras" so nothing
+   breaks. Each provider reads its own API key secret, so you can have
+   all three keys set and flip between them with just the var — no code
+   change, no redeploy of secrets.
 
    Defaults live here; every value can be overridden from wrangler.toml
    so you never have to touch code to retune. */
 const PROVIDER = "cerebras"; // fallback if env.LLM_PROVIDER is unset
 
 const CEREBRAS_MODEL = "gpt-oss-120b";
+
+// Same model family as Cerebras (gpt-oss-120b), just served from Groq's
+// LPU hardware instead — handy as a drop-in fallback. Groq also hosts
+// llama-3.3-70b-versatile and others; override with GROQ_MODEL in
+// wrangler.toml if you want to try a different one.
+const GROQ_MODEL = "openai/gpt-oss-120b";
 
 // gemini-3.5-flash is the current recommended free-tier Flash model.
 // gemini-3.1-flash-lite is the lighter, higher-rate-limit alternative.
@@ -351,6 +362,48 @@ async function askCerebras(env, system, user) {
   };
 }
 
+// Groq's endpoint is OpenAI-compatible chat/completions, same shape as
+// Cerebras above — that's why this function is almost identical to
+// askCerebras. reasoning_effort is honoured the same way, since the
+// default model here (gpt-oss-120b) is the same reasoning model.
+async function askGroq(env, system, user) {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.GROQ_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: env.GROQ_MODEL || GROQ_MODEL,
+      // Same reasoning-budget trap as Cerebras: too low and a harder
+      // question spends the whole budget thinking and returns empty
+      // content. See the comment on the Cerebras call above.
+      max_completion_tokens: 2000,
+      reasoning_effort: "low",
+      temperature: 0.3,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    console.log("Groq HTTP status:", String(res.status));
+    console.log("Groq error body:", body.slice(0, 800));
+    throw new Error(`Groq HTTP ${res.status}: ${body}`);
+  }
+
+  const data = await res.json();
+  const choice = data.choices?.[0];
+  return {
+    answer: (choice?.message?.content || "").trim(),
+    finishReason: choice?.finish_reason,
+    usage: data.usage,
+  };
+}
+
 async function askGemini(env, system, user) {
   const model = env.GEMINI_MODEL || GEMINI_MODEL;
   // "off" (or any empty value) omits thinkingConfig from the request
@@ -425,9 +478,19 @@ function pickProvider(env) {
   if (name === "gemini") {
     return env.GEMINI_API_KEY ? { name, call: askGemini } : null;
   }
+  if (name === "groq") {
+    return env.GROQ_API_KEY ? { name, call: askGroq } : null;
+  }
   // default / "cerebras"
   return env.CEREBRAS_API_KEY ? { name: "cerebras", call: askCerebras } : null;
 }
+
+// Which secret name to point someone at when pickProvider() returns null.
+const PROVIDER_KEY_NAME = {
+  gemini: "GEMINI_API_KEY",
+  groq: "GROQ_API_KEY",
+  cerebras: "CEREBRAS_API_KEY",
+};
 
 export default {
   async fetch(request, env) {
@@ -470,7 +533,8 @@ export default {
       // since this is otherwise indistinguishable in the response from a
       // provider that's working but chose to say nothing.
       const wanted = (env.LLM_PROVIDER || PROVIDER).toLowerCase();
-      console.log(`No API key configured for provider "${wanted}". Set it with: npx wrangler secret put ${wanted === "gemini" ? "GEMINI_API_KEY" : "CEREBRAS_API_KEY"}`);
+      const keyName = PROVIDER_KEY_NAME[wanted] || "CEREBRAS_API_KEY";
+      console.log(`No API key configured for provider "${wanted}". Set it with: npx wrangler secret put ${keyName}`);
       return json({ answer: null, items }, 200);
     }
 
