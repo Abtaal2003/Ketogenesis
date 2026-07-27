@@ -1,6 +1,6 @@
 # Keto Genesis — menu site
 
-A fast and free menu website for Keto Genesis, "The Fat Burning Fuel
+A fast, free menu website for Keto Genesis, "The Fat Burning Fuel
 Factory" — a keto food producer in Bahria Town Phase 7, Rawalpindi,
 trading since 2020. Customers browse the menu, search it, check macros, build an
 order, and hand off to WhatsApp with the order already typed out.
