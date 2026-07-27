@@ -67,8 +67,8 @@ function check(name, cond, detail) {
   }
 }
 
-/* ---- 1. default: no var set, code default applies ---- */
-console.log("\n1. Default thinking level (no GEMINI_THINKING_LEVEL var)");
+/* ---- 1. default: no var set, code default applies (now "off") ---- */
+console.log("\n1. Default (no GEMINI_THINKING_LEVEL var) is the safe shape");
 nextResponse = geminiOk;
 let res = await ask(BASE);
 let json = await res.json();
@@ -78,14 +78,8 @@ check("request goes to the v1beta generateContent endpoint",
   captured.url ===
     "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent",
   captured.url);
-check("thinkingConfig sits inside generationConfig",
-  gc.thinkingConfig !== undefined,
-  JSON.stringify(gc));
-check('thinkingLevel is the lowercase string "low"',
-  gc.thinkingConfig.thinkingLevel === "low",
-  JSON.stringify(gc.thinkingConfig));
-check("thinkingBudget is NOT sent alongside it",
-  gc.thinkingConfig.thinkingBudget === undefined);
+check("no thinkingConfig by default",
+  !("thinkingConfig" in gc), JSON.stringify(gc));
 check("maxOutputTokens left at 2000",
   gc.maxOutputTokens === 2000, String(gc.maxOutputTokens));
 check("temperature untouched",
@@ -101,8 +95,19 @@ check("items still returned alongside the answer",
 /* ---- 2. var override ---- */
 console.log("\n2. Override via GEMINI_THINKING_LEVEL");
 nextResponse = geminiOk;
+await ask({ ...BASE, GEMINI_THINKING_LEVEL: "low" });
+gc = captured.body.generationConfig;
+check("thinkingConfig sits inside generationConfig",
+  gc.thinkingConfig !== undefined, JSON.stringify(gc));
+check('thinkingLevel is the lowercase string "low"',
+  gc.thinkingConfig.thinkingLevel === "low",
+  JSON.stringify(gc.thinkingConfig));
+check("thinkingBudget is NOT sent alongside it",
+  gc.thinkingConfig.thinkingBudget === undefined);
+
+nextResponse = geminiOk;
 await ask({ ...BASE, GEMINI_THINKING_LEVEL: "minimal" });
-check('var wins over the code default',
+check("var wins over the code default",
   captured.body.generationConfig.thinkingConfig.thinkingLevel === "minimal",
   JSON.stringify(captured.body.generationConfig.thinkingConfig));
 
@@ -139,6 +144,50 @@ json = await res.json();
 check("HTTP 200 to the browser even when Gemini errors", res.status === 200);
 check("answer is null, items still served",
   json.answer === null && Array.isArray(json.items) && json.items.length > 0);
+
+/* ---- 5. "off" omits thinkingConfig entirely ---- */
+console.log('\n5. GEMINI_THINKING_LEVEL = "off"');
+nextResponse = geminiOk;
+await ask({ ...BASE, GEMINI_THINKING_LEVEL: "off" });
+gc = captured.body.generationConfig;
+check("thinkingConfig key is absent, not null",
+  !("thinkingConfig" in gc), JSON.stringify(gc));
+check("body matches the pre-change shape exactly",
+  JSON.stringify(Object.keys(gc).sort()) ===
+    JSON.stringify(["maxOutputTokens", "temperature"]),
+  JSON.stringify(Object.keys(gc)));
+check("rest of the request untouched",
+  gc.maxOutputTokens === 2000 && gc.temperature === 0.3);
+
+nextResponse = geminiOk;
+await ask({ ...BASE, GEMINI_THINKING_LEVEL: " OFF " });
+check('"off" is matched case-insensitively and trimmed',
+  !("thinkingConfig" in captured.body.generationConfig));
+
+/* ---- 6. error detail actually reaches the log ---- */
+console.log("\n6. Failure logs status and body separately");
+const logged = [];
+const realLog = console.log;
+console.log = (...args) => logged.push(args.map(String).join(" "));
+nextResponse = () =>
+  new Response(
+    JSON.stringify({
+      error: { code: 400, message: "Unknown name \"thinkingLevel\"", status: "INVALID_ARGUMENT" },
+    }),
+    { status: 400 }
+  );
+await ask({ ...BASE, GEMINI_THINKING_LEVEL: "low" });
+console.log = realLog;
+
+check("status logged as its own line",
+  logged.some((l) => l.includes("Gemini HTTP status: 400")),
+  JSON.stringify(logged));
+check("Google's error message logged verbatim",
+  logged.some((l) => l.includes("INVALID_ARGUMENT")),
+  JSON.stringify(logged));
+check("model and level logged for context",
+  logged.some((l) => l.includes("gemini-3.5-flash") && l.includes("low")),
+  JSON.stringify(logged));
 
 console.log(
   failures === 0
