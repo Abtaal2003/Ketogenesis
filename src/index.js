@@ -56,15 +56,16 @@ const GEMINI_MODEL = "gemini-3.5-flash";
    reasoning is pure latency, so this drops it to "low".
 
      "minimal" — closest to thinking off; fastest
-     "low"     — minimises latency and cost (chosen)
+     "low"     — minimises latency and cost
      "medium"  — the model default
      "high"    — deepest reasoning, slowest first token
+     "off"     — do not send thinkingConfig at all (rollback switch)
 
    IMPORTANT: thinkingLevel is the Gemini 3 parameter. The 2.5 series
    uses thinkingBudget (a token count) instead and rejects this one, so
-   if GEMINI_MODEL is ever pointed back at a 2.5 model, this has to
-   change with it. Override with GEMINI_THINKING_LEVEL in wrangler.toml. */
-const GEMINI_THINKING_LEVEL = "low";
+   if GEMINI_MODEL is ever pointed back at a 2.5 model, set this to
+   "off". Override with GEMINI_THINKING_LEVEL in wrangler.toml. */
+const GEMINI_THINKING_LEVEL = "off";
 
 /* Longest customer question accepted, in characters. Anything longer is
    trimmed rather than rejected, so a rambling question still gets an
@@ -352,9 +353,14 @@ async function askCerebras(env, system, user) {
 
 async function askGemini(env, system, user) {
   const model = env.GEMINI_MODEL || GEMINI_MODEL;
-  const level = (env.GEMINI_THINKING_LEVEL || GEMINI_THINKING_LEVEL)
+  // "off" (or any empty value) omits thinkingConfig from the request
+  // entirely, restoring the exact body this Worker sent before the
+  // setting existed. That is the rollback switch: one word in
+  // wrangler.toml, no code edit.
+  const raw = (env.GEMINI_THINKING_LEVEL || GEMINI_THINKING_LEVEL)
     .trim()
     .toLowerCase();
+  const level = raw === "off" ? "" : raw;
   // The key goes in the x-goog-api-key header, never the URL, so it does
   // not end up in logs. system_instruction carries the system prompt;
   // contents carries the customer's message.
@@ -371,9 +377,10 @@ async function askGemini(env, system, user) {
         contents: [{ role: "user", parts: [{ text: user }] }],
         generationConfig: {
           temperature: 0.3,
-          // Without this the model thinks at its default level on every
-          // question, which is where the slow replies came from.
-          thinkingConfig: { thinkingLevel: level },
+          // Only sent when a level is configured. Spreading an empty
+          // object leaves the key out completely rather than sending
+          // thinkingConfig: null, which Google would reject.
+          ...(level ? { thinkingConfig: { thinkingLevel: level } } : {}),
           // Thinking tokens are drawn from THIS budget, the same trap as
           // the Cerebras reasoning budget above: set it too low and a
           // harder question spends the lot on thinking and comes back
@@ -386,8 +393,15 @@ async function askGemini(env, system, user) {
   );
 
   if (!res.ok) {
+    // Log the status and Google's error body as separate PLAIN STRINGS.
+    // Packing them into an Error and logging the object loses them: the
+    // Workers log pipeline renders the stack but drops the message, which
+    // is exactly how a 400 here turned into an unreadable log line.
     const body = await res.text();
-    throw new Error(`Gemini HTTP ${res.status}: ${body}`);
+    console.log("Gemini HTTP status:", String(res.status));
+    console.log("Gemini error body:", body.slice(0, 800));
+    console.log("Gemini model was:", model, "thinkingLevel was:", level || "(omitted)");
+    throw new Error(`Gemini HTTP ${res.status}`);
   }
 
   const data = await res.json();
