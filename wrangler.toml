@@ -24,12 +24,15 @@ directory = "./public"
 enabled = true
 
 [vars]
-# Which LLM answers /ask: "cerebras" or "gemini". Change this one line
-# and redeploy to switch providers — no code change needed. Defaults to
-# "cerebras" if omitted. The chosen provider must have its API key set
-# as a secret (see below); if it doesn't, the site still works and just
-# shows the matched items without a written answer.
-LLM_PROVIDER = "gemini"
+# Which LLM answers /ask: "cerebras", "gemini", or "groq". Change this
+# one line and redeploy to switch providers — no code change needed.
+# Defaults to "cerebras" if omitted. The chosen provider must have its
+# API key set as a secret (see below); if it doesn't, the site still
+# works and just shows the matched items without a written answer.
+#
+# Currently set to "groq" to try it as a fallback while Gemini is
+# returning 503 "high demand" errors on gemini-3.5-flash.
+LLM_PROVIDER = "groq"
 
 # Model IDs per provider. Only the one matching LLM_PROVIDER is used.
 CEREBRAS_MODEL = "gpt-oss-120b"
@@ -37,6 +40,10 @@ CEREBRAS_MODEL = "gpt-oss-120b"
 # your account in Google AI Studio — Google renames these across
 # generations (gemini-2.5-flash -> gemini-3.5-flash, etc.).
 GEMINI_MODEL = "gemini-3.5-flash"
+# Same underlying model as Cerebras above, just served from Groq's LPU
+# hardware. Groq also hosts llama-3.3-70b-versatile if you'd rather try
+# that instead — confirm current model IDs at console.groq.com.
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 # How hard Gemini thinks before it starts writing, and the main reason a
 # reply feels slow. gemini-3.5-flash defaults to "medium"; a menu lookup
@@ -63,4 +70,7 @@ MAX_QUERY_CHARS = "1000"
 # or with:
 #   npx wrangler secret put CEREBRAS_API_KEY
 #   npx wrangler secret put GEMINI_API_KEY
-# You can set both and flip between them with LLM_PROVIDER above.
+#   npx wrangler secret put GROQ_API_KEY
+# You can set as many as you like and flip between them with
+# LLM_PROVIDER above. Get a free Groq key (no card) at
+# console.groq.com/keys.

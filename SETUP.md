@@ -213,8 +213,11 @@ and stays that way.
 
 Pick a provider and get a free API key, no card required:
 
-- **Gemini** — a key from **aistudio.google.com**. This is what
-  `wrangler.toml` is currently set to (`LLM_PROVIDER = "gemini"`).
+- **Groq** — a key from **console.groq.com/keys**. This is what
+  `wrangler.toml` is currently set to (`LLM_PROVIDER = "groq"`), added
+  as a fallback for when Gemini returns a 503 "high demand" error.
+- **Gemini** — a key from **aistudio.google.com**. Switch to it by
+  changing `LLM_PROVIDER` to `"gemini"` in `wrangler.toml`.
 - **Cerebras** — a key from **cloud.cerebras.ai**, if you'd rather use
   that instead. Switch to it by changing `LLM_PROVIDER` to `"cerebras"`
   in `wrangler.toml`.
@@ -224,10 +227,15 @@ Then, from the repo root:
 ```bash
 npm install
 npx wrangler login
-npx wrangler secret put GEMINI_API_KEY
-# or: npx wrangler secret put CEREBRAS_API_KEY, if using Cerebras
+npx wrangler secret put GROQ_API_KEY
+# or: npx wrangler secret put GEMINI_API_KEY
+# or: npx wrangler secret put CEREBRAS_API_KEY
 npx wrangler deploy
 ```
+
+You can set more than one of these secrets at once — only the key for
+whichever `LLM_PROVIDER` is active gets used, so it's safe to keep all
+three around and flip the var when one provider is having a bad day.
 
 Commit and push if you changed `LLM_PROVIDER`. The Ask button appears
 automatically once a key is set for whichever provider is selected —
@@ -412,12 +420,14 @@ likelihood:
 1. **The API key is missing or wrong.** Go to **ketogenesis → Settings →
    Variables and Secrets** and confirm a secret exists whose name matches
    the provider in use. `wrangler.toml` sets `LLM_PROVIDER`; if it says
-   `"gemini"` the secret must be `GEMINI_API_KEY`, if `"cerebras"` then
-   `CEREBRAS_API_KEY`. Having the *other* one set does not help.
-2. **The model ID has been renamed.** Google and Cerebras both retire
-   model names. Open Google AI Studio, look at which models the account
-   can actually call, and compare against `GEMINI_MODEL` in
-   `wrangler.toml`. Correct that one line, commit, done.
+   `"gemini"` the secret must be `GEMINI_API_KEY`, if `"groq"` then
+   `GROQ_API_KEY`, if `"cerebras"` then `CEREBRAS_API_KEY`. Having a
+   *different* one set does not help.
+2. **The model ID has been renamed.** Google, Groq, and Cerebras all
+   retire model names. Open the provider's console, look at which
+   models the account can actually call, and compare against
+   `GEMINI_MODEL` / `GROQ_MODEL` / `CEREBRAS_MODEL` in `wrangler.toml`.
+   Correct that one line, commit, done.
 3. **The free quota is exhausted for the day.** It resets; try again
    tomorrow before changing anything.
 
@@ -450,6 +460,7 @@ AI layer is completely down, so the shop is never actually shut.
 |:-----|:-----|
 | Cloudflare Worker + static assets (100k requests/day) | Rs 0 |
 | Gemini free tier (no card, no expiry) | Rs 0 |
+| Groq free tier (no card, rate-limited not metered) | Rs 0 |
 | Cerebras (1M tokens/day), if you switch back | Rs 0 |
 | GitHub | Rs 0 |
 | Custom domain | optional, ~Rs 3,000–4,000/year |
