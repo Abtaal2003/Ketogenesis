@@ -47,6 +47,25 @@ const CEREBRAS_MODEL = "gpt-oss-120b";
 // in wrangler.toml.
 const GEMINI_MODEL = "gemini-3.5-flash";
 
+/* How hard Gemini thinks before it starts writing. This is the direct
+   counterpart of reasoning_effort on the Cerebras call below, and it is
+   the single biggest lever on how long a customer waits.
+
+   Gemini 3 models reason internally before emitting any visible text,
+   and gemini-3.5-flash defaults to "medium". For a menu lookup that
+   reasoning is pure latency, so this drops it to "low".
+
+     "minimal" — closest to thinking off; fastest
+     "low"     — minimises latency and cost (chosen)
+     "medium"  — the model default
+     "high"    — deepest reasoning, slowest first token
+
+   IMPORTANT: thinkingLevel is the Gemini 3 parameter. The 2.5 series
+   uses thinkingBudget (a token count) instead and rejects this one, so
+   if GEMINI_MODEL is ever pointed back at a 2.5 model, this has to
+   change with it. Override with GEMINI_THINKING_LEVEL in wrangler.toml. */
+const GEMINI_THINKING_LEVEL = "low";
+
 /* Longest customer question accepted, in characters. Anything longer is
    trimmed rather than rejected, so a rambling question still gets an
    answer instead of an error.
@@ -333,6 +352,9 @@ async function askCerebras(env, system, user) {
 
 async function askGemini(env, system, user) {
   const model = env.GEMINI_MODEL || GEMINI_MODEL;
+  const level = (env.GEMINI_THINKING_LEVEL || GEMINI_THINKING_LEVEL)
+    .trim()
+    .toLowerCase();
   // The key goes in the x-goog-api-key header, never the URL, so it does
   // not end up in logs. system_instruction carries the system prompt;
   // contents carries the customer's message.
@@ -349,6 +371,14 @@ async function askGemini(env, system, user) {
         contents: [{ role: "user", parts: [{ text: user }] }],
         generationConfig: {
           temperature: 0.3,
+          // Without this the model thinks at its default level on every
+          // question, which is where the slow replies came from.
+          thinkingConfig: { thinkingLevel: level },
+          // Thinking tokens are drawn from THIS budget, the same trap as
+          // the Cerebras reasoning budget above: set it too low and a
+          // harder question spends the lot on thinking and comes back
+          // with empty content. Brevity is enforced by the system
+          // prompt, not by this, so it stays generous.
           maxOutputTokens: 2000,
         },
       }),
