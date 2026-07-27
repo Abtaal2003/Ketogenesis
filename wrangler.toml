@@ -38,6 +38,14 @@ CEREBRAS_MODEL = "gpt-oss-120b"
 # generations (gemini-2.5-flash -> gemini-3.5-flash, etc.).
 GEMINI_MODEL = "gemini-3.5-flash"
 
+# How hard Gemini thinks before it starts writing, and the main reason a
+# reply feels slow. gemini-3.5-flash defaults to "medium"; a menu lookup
+# does not need that. Options, fastest first: minimal, low, medium, high.
+# Only applies to Gemini 3 models — the 2.5 series uses a token budget
+# instead and will reject this. Ignored entirely when LLM_PROVIDER is
+# "cerebras", which has its own reasoning_effort setting in the code.
+GEMINI_THINKING_LEVEL = "low"
+
 # The number the assistant gives out when someone asks how to reach a
 # person. Keep it identical to ORDER_NUMBER in public/config.js — that
 # one builds the wa.me link, this one goes into the prompt.
