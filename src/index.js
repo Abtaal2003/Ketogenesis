@@ -219,13 +219,46 @@ const STOPWORDS = new Set([
    because the query term kept its trailing "?" or its hyphen while the
    text did not. \p{L}/\p{N} keep letters and digits of ANY script, so
    Urdu descriptions would survive this unchanged.                    */
+/* Fraction of a query's meaningful terms an item must match to count as
+   a hit at all. See the coverage note at the bottom of the scorer. */
+const MIN_COVERAGE = 0.7;
+
+/* Words that name the business rather than a product. Every item here is
+   keto, so these narrow nothing and are stripped from a query before it
+   is scored. Whole words only.
+
+   "genesis" is deliberately NOT here. On its own it is far more likely
+   to be someone looking for the business than for a product, and
+   returning all 77 items would answer a question they did not ask. Left
+   out, it matches nothing and the no-match fallback shows the menu with
+   an explanation, which is the better shape for that case. */
+const BRAND = new Set(["keto", "ketogenesis"]);
+
 function norm(text) {
   return String(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 function score(item, query) {
-  const q = norm(query);
+  let q = norm(query);
   if (!q) return 1;
+
+  // A bare "keto" search returned 72 of 77 items. The 5 it dropped (the
+  // Vanilla Sponge Cake, the 19-B Special Soup and three others) were
+  // missing only because their names never happen to say "keto" — a
+  // naming artefact, not a search result. Everything on this menu is
+  // keto, so the word narrows nothing and the honest response to it is
+  // the whole catalogue.
+  //
+  // Stripping here rather than adding it to STOPWORDS is deliberate:
+  // that list is consulted below the whole-phrase check, and the
+  // `words.length ? words : raw` fallback puts the word straight back
+  // when it is the entire query, so neither reaches this case.
+  //
+  // It also stops the brand word acting as a free coverage point. With
+  // it counted, "keto almond flour bread" cleared the floor below on
+  // only two of its three real words and returned 12 items instead of 2.
+  q = q.split(/\s+/).filter((w) => !BRAND.has(w)).join(" ");
+  if (!q) return 1;          // nothing but brand words: match everything
 
   const name = norm(item.name);
   const hay = norm(`${item.name} ${item.desc} ${item.cat}`);
@@ -247,10 +280,25 @@ function score(item, query) {
   if (!terms.length) return 0;
 
   let s = 0;
+  let hits = 0;
   for (const w of terms) {
-    if (name.includes(w)) s += 2;
-    else if (hay.includes(w)) s += 1;
+    if (name.includes(w)) { s += 2; hits += 1; }
+    else if (hay.includes(w)) { s += 1; hits += 1; }
   }
+
+  // Coverage floor. Summing per-term hits with no floor meant an item
+  // matching one term out of three ranked alongside one matching all
+  // three, so "almond milk" returned 16 items on the strength of
+  // "almond" alone while nothing on the menu was almond milk. Requiring
+  // most of the query to land turns that into an honest miss.
+  //
+  // At 0.7 a two- or three-word query needs every word, and a four-word
+  // query needs three of them. Raised from 0.6 because two thirds
+  // cleared that bar: "sugar free coffee" still returned six items on
+  // "sugar" and "free" alone, none of them coffee. Single-word queries
+  // are unaffected, and the whole-phrase check above short-circuits
+  // before this.
+  if (hits / terms.length < MIN_COVERAGE) return 0;
   return s;
 }
 
