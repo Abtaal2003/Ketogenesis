@@ -125,11 +125,19 @@ function systemPrompt(env) {
   WhatsApp", which opens a chat with their order already typed out.
 
 ## About products — strict
-- Answer ONLY from the product list given in the customer's message.
-- Never invent a product, price, ingredient, or macro figure. If it is
-  not in the list, you do not know it.
-- If the list does not answer the question, say you are not sure and
-  point them to the menu or to WhatsApp.
+The customer's message contains two lists.
+- FULL MENU: every product we sell, with its price and category. This
+  is the complete, always-present list of what exists. You may state
+  any name, price, or category from it freely.
+- DETAIL ON LIKELY MATCHES: fuller description and macros for whichever
+  items most likely answer this question. This is the ONLY source for
+  descriptions, ingredients, or macros — never invent one, even for an
+  item you can see in FULL MENU but that has no entry here.
+- If what the customer is asking about isn't in FULL MENU at all, say
+  you don't think we carry it and point them to WhatsApp to confirm.
+- If it's in FULL MENU but has no entry in DETAIL ON LIKELY MATCHES,
+  confirm it exists and its price, but say you don't have the exact
+  description or macros to hand and suggest WhatsApp for specifics.
 
 ## Things only the team can confirm
 Delivery areas, delivery times, stock on a given day, custom orders,
@@ -255,7 +263,9 @@ function retrieve(query, k = 5) {
 }
 
 function describe(items) {
-  if (!items.length) return "(no matching products found)";
+  if (!items.length) {
+    return "(nothing scored a close wording match — rely on FULL MENU above for what exists; do not guess at descriptions or macros)";
+  }
   return items
     .map((i) => {
       const m = i.macros
@@ -273,6 +283,38 @@ function describe(items) {
       return `- ${i.name} (Rs ${price}, ${i.cat}): ${i.desc || "no description"}.${m}`;
     })
     .join("\n");
+}
+
+/* Compact, one-line-per-item version of the ENTIRE catalogue: name,
+   price, category, nothing else. This goes into every prompt regardless
+   of what the customer typed, so the model always knows the complete set
+   of what exists. A query that scores zero in retrieve() — a category
+   word like "dessert" that never appears verbatim in any name/desc/cat,
+   or a Roman Urdu word like "meetha" — no longer means the model has
+   nothing to work with. It can still see every product by name and
+   reason about which ones plausibly match, the way a person reading the
+   menu would.
+
+   Names are copied verbatim, same rule and same reason as describe():
+   several product names are themselves Roman Urdu ("Keto Zera
+   Biscuits"), and the system prompt already forbids translating a
+   product name.
+
+   Cross-listed items (the same product filed under two categories, e.g.
+   the Pizza in both Savoury Stuff and Italian Cuisine) are deduplicated
+   by name here so one product doesn't cost two lines in the prompt. The
+   customer-facing category browse in public/app.js is untouched by this
+   — it still shows the item in both places; this only affects what goes
+   into the LLM call. */
+function compactCatalog() {
+  const seen = new Set();
+  const lines = [];
+  for (const i of MENU) {
+    if (seen.has(i.name)) continue;
+    seen.add(i.name);
+    lines.push(`- ${i.name} — Rs ${i.price.toLocaleString("en-PK")} (${i.cat})`);
+  }
+  return lines.join("\n");
 }
 
 /* ---------- same-origin guard ----------
@@ -539,7 +581,12 @@ export default {
     }
 
     const system = systemPrompt(env);
-    const user = `Products that may be relevant:\n${describe(grounded)}\n\nCustomer's message: ${q}`;
+    // FULL MENU is the complete catalogue, compact, always present — a
+    // retrieval miss can never leave the model with nothing to answer
+    // from. DETAIL ON LIKELY MATCHES is the existing retrieve() output,
+    // unchanged: full descriptions and macros for whatever scored a hit.
+    // See compactCatalog() above for why both are here.
+    const user = `FULL MENU (every product, name — price (category)):\n${compactCatalog()}\n\nDETAIL ON LIKELY MATCHES (fuller description and macros for items that may answer this question):\n${describe(grounded)}\n\nCustomer's message: ${q}`;
 
     try {
       const { answer, finishReason, usage } = await provider.call(env, system, user);
