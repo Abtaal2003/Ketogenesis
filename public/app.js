@@ -22,6 +22,14 @@ let cart = [];
 // or out-of-order responses can never overwrite a newer one.
 let askTicket = 0;
 
+// False while the customer is actively typing. Only the wording of the
+// hint depends on it: "nothing matched" is a claim about a finished
+// query, and word count was a poor proxy for finished. Idle time is the
+// direct measure, so "alm" on the way to "almond" never flashes a
+// failure. The grid itself never waits on this.
+let settled = true;
+let settleTimer;
+
 const rs = (n) => "Rs " + n.toLocaleString("en-PK");
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -158,13 +166,46 @@ const STOPWORDS = new Set([
    because the query term kept its trailing "?" or its hyphen while the
    text did not. \p{L}/\p{N} keep letters and digits of ANY script, so
    Urdu descriptions would survive this unchanged.                    */
+/* Fraction of a query's meaningful terms an item must match to count as
+   a hit at all. See the coverage note at the bottom of the scorer. */
+const MIN_COVERAGE = 0.7;
+
+/* Words that name the business rather than a product. Every item here is
+   keto, so these narrow nothing and are stripped from a query before it
+   is scored. Whole words only.
+
+   "genesis" is deliberately NOT here. On its own it is far more likely
+   to be someone looking for the business than for a product, and
+   returning all 77 items would answer a question they did not ask. Left
+   out, it matches nothing and the no-match fallback shows the menu with
+   an explanation, which is the better shape for that case. */
+const BRAND = new Set(["keto", "ketogenesis"]);
+
 function norm(text) {
   return String(text).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 }
 
 function scoreItem(item, query) {
-  const q = norm(query);
+  let q = norm(query);
   if (!q) return 1;
+
+  // A bare "keto" search returned 72 of 77 items. The 5 it dropped (the
+  // Vanilla Sponge Cake, the 19-B Special Soup and three others) were
+  // missing only because their names never happen to say "keto" — a
+  // naming artefact, not a search result. Everything on this menu is
+  // keto, so the word narrows nothing and the honest response to it is
+  // the whole catalogue.
+  //
+  // Stripping here rather than adding it to STOPWORDS is deliberate:
+  // that list is consulted below the whole-phrase check, and the
+  // `words.length ? words : raw` fallback puts the word straight back
+  // when it is the entire query, so neither reaches this case.
+  //
+  // It also stops the brand word acting as a free coverage point. With
+  // it counted, "keto almond flour bread" cleared the floor below on
+  // only two of its three real words and returned 12 items instead of 2.
+  q = q.split(/\s+/).filter((w) => !BRAND.has(w)).join(" ");
+  if (!q) return 1;          // nothing but brand words: match everything
 
   const name = norm(item.name);
   const hay = norm(`${item.name} ${item.desc} ${item.cat}`);
@@ -186,10 +227,25 @@ function scoreItem(item, query) {
   if (!terms.length) return 0;
 
   let s = 0;
+  let hits = 0;
   for (const w of terms) {
-    if (name.includes(w)) s += 2;
-    else if (hay.includes(w)) s += 1;
+    if (name.includes(w)) { s += 2; hits += 1; }
+    else if (hay.includes(w)) { s += 1; hits += 1; }
   }
+
+  // Coverage floor. Summing per-term hits with no floor meant an item
+  // matching one term out of three ranked alongside one matching all
+  // three, so "almond milk" returned 16 items on the strength of
+  // "almond" alone while nothing on the menu was almond milk. Requiring
+  // most of the query to land turns that into an honest miss.
+  //
+  // At 0.7 a two- or three-word query needs every word, and a four-word
+  // query needs three of them. Raised from 0.6 because two thirds
+  // cleared that bar: "sugar free coffee" still returned six items on
+  // "sugar" and "free" alone, none of them coffee. Single-word queries
+  // are unaffected, and the whole-phrase check above short-circuits
+  // before this.
+  if (hits / terms.length < MIN_COVERAGE) return 0;
   return s;
 }
 
@@ -250,11 +306,31 @@ function stillComposing(q) {
   return norm(q).split(/\s+/).every((t) => t.length < 3 || STOPWORDS.has(t));
 }
 
-function setHint(questionMode) {
+/* The grid and the message are now two separate decisions, which is why
+   stillComposing() no longer gates what gets rendered.
+
+   Which items to show: matches when there are any, the full pool
+   otherwise. Never empty, no criteria required. A blank grid was the
+   worst outcome available — it told someone we had nothing when the
+   honest position was that this particular wording found nothing.
+
+   Whether to say so: debounced, and suppressed while the query still
+   looks like a half-formed question. Getting that wrong now costs a
+   mistimed line of text instead of a blanked menu. */
+function setHint(mode, q) {
+  const hint = $("hint");
+
+  if (mode === "fallback") {
+    hint.textContent = `Nothing matched \u201C${q}\u201D. Showing the full menu`
+      + (CFG_ASK ? ", or press Ask for a written answer." : ".");
+    return;
+  }
+
   // Four states, not three: questionMode can now be reached with the Ask
   // feature switched off, and telling someone to press a button that is
   // not on the page would be worse than the blank menu this replaced.
-  $("hint").textContent =
+  const questionMode = mode === "question";
+  hint.textContent =
     questionMode && CFG_ASK ? "That looks like a question. Press Ask."
     : questionMode ? "Keep typing to filter the menu."
     : CFG_ASK ? "Typing filters instantly. Press Ask for a written answer."
@@ -263,7 +339,8 @@ function setHint(questionMode) {
 
 function render(rows) {
   const q = $("q").value.trim();
-  let questionMode = false;
+  let mode = "normal";
+  let fellBack = false;
 
   if (!rows) {
     const pool = MENU.filter((m) => activeCat === "All" || m.cat === activeCat);
@@ -276,30 +353,28 @@ function render(rows) {
         .sort((a, b) => b.s - a.s)
         .map((r) => r.m);
 
-      // Deliberately NOT gated on CFG_ASK. config.js documents setting
-      // ASK_URL to "" as a supported configuration where browsing and
-      // search still work — but with the gate here, a site in that state
-      // blanked the whole menu to "Nothing matches" on the first
-      // keystroke, because a 1-2 char query scores 0 everywhere. The
-      // safety net is a search concern; it must not depend on an
-      // unrelated feature being switched on. setHint() below picks the
-      // wording that suits whichever configuration is running.
-      if (!rows.length && stillComposing(q)) {
-        rows = pool;            // mid-sentence, not a failed search
-        questionMode = true;
+      if (!rows.length) {
+        // The one rule: never render an empty grid. Whether this reads as
+        // a question, a typo or a product we do not carry, the useful
+        // response is the same — put the menu back and say why.
+        rows = pool;
+        fellBack = true;
+        mode = stillComposing(q) ? "question"
+             : settled ? "fallback"
+             : "normal";     // mid-word: no claim yet, just the menu
       }
     }
   }
 
-  setHint(questionMode);
+  setHint(mode, q);
 
-  $("count").textContent = rows.length
+  // A count belongs to a result set. Labelling the fallback "77 items"
+  // was the part that actively misled: it read as a confident answer to
+  // a query that had in fact matched nothing.
+  $("count").textContent = !fellBack && q && rows.length
     ? `${rows.length} item${rows.length > 1 ? "s" : ""}` : "";
 
-  $("list").innerHTML = rows.length
-    ? rows.map(card).join("")
-    : `<p class="empty">Nothing matches &ldquo;${esc(q)}&rdquo;.<br>
-         Try another word${CFG_ASK ? ", or press Ask" : ""}.</p>`;
+  $("list").innerHTML = rows.map(card).join("");
 }
 
 /* ---------- order ----------
@@ -474,6 +549,13 @@ $("q").addEventListener("input", () => {
   $("askBtn").disabled = !q;
   askTicket++;                  // invalidate any reply still in flight
   $("answer").innerHTML = "";   // an old answer must not outlive its question
+
+  // Filtering stays synchronous — only the "nothing matched" wording
+  // waits for the typing to stop.
+  settled = false;
+  clearTimeout(settleTimer);
+  settleTimer = setTimeout(() => { settled = true; render(); }, 400);
+
   render();                     // render() sets the hint from what it decided
 });
 $("q").addEventListener("keydown", (e) => {
