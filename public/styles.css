@@ -278,7 +278,7 @@ input[type=search]:focus-visible{outline:2px solid var(--red);outline-offset:1px
      font:inherit;font-size:.85rem;font-weight:600;cursor:pointer}
 .add:hover{background:var(--ink);color:var(--paper)}  /* see chip note above */
 .add:focus-visible{outline:2px solid var(--red);outline-offset:2px}
-.empty{padding:44px 0;color:var(--dim);text-align:center;font-size:.92rem;line-height:1.6}
+.empty{grid-column:1/-1;padding:44px 0;color:var(--dim);text-align:center;font-size:.92rem;line-height:1.6}
 
 /* ---------- order bar ---------- */
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--bar);
