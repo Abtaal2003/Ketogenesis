@@ -176,10 +176,19 @@ You: I am not sure we have pasta. Have a look through the menu, or message us on
 }
 
 /* ---------- retrieval ----------
-   Byte-for-byte the same scoring as scoreItem() in public/app.js. Keep
-   the two in step: if they drift, typing a query and pressing Ask on the
-   same query start surfacing different items, which reads as a bug to a
-   customer.                                                            */
+   The same scoring as scoreItem() in public/app.js, with one deliberate
+   difference. The page collapses the four cross-listed products into one
+   card each, so it would lose the other copy's words from its search
+   index; it keeps them in an `alt` field and adds that field to its
+   haystack. This side has no such problem — it scores the raw catalogue,
+   where both copies are present already — so there is no `alt` here and
+   there should not be.
+
+   The two are therefore not textually identical, and that is fine. What
+   must hold is that they surface the SAME PRODUCTS for the same query:
+   if that drifts, typing a query and pressing Ask start showing
+   different items, which reads as a bug to a customer. Anything that
+   changes one scorer needs re-checking against the other.            */
 const STOPWORDS = new Set([
   "aap", "aapka", "about", "above", "acha", "achi", "after", "again",
   "against", "agar", "alaikum", "all", "and", "any", "anyone", "anything",
@@ -302,12 +311,41 @@ function score(item, query) {
   return s;
 }
 
+/* Collapse the cross-listed products before returning.
+
+   Four products are filed under two categories each, so a query like
+   "chocolate spread" scored both copies and handed the SAME product to
+   the prompt twice, spending 2 of the 5 grounding slots on identical
+   text. Measured on pizza, chocolate spread, zera biscuits and tea
+   creamer: one wasted slot each.
+
+   Which copy survives matters, because the two carry different
+   descriptions. The longer one wins, exactly as public/app.js does it,
+   so the model is grounded on "Juicy chicken, melted cheese, herbs and
+   condiments on a coconut-flour crust" rather than "Personal-size keto
+   pizza". Map.set on an existing key keeps the original insertion
+   position, so swapping in the richer copy does not disturb the
+   best-first ordering.
+
+   The display list is deduped by the same pass. The page collapses
+   duplicates on arrival regardless, so nothing visible changes; it just
+   stops sending a row that would be discarded. */
 function retrieve(query, k = 5) {
-  return MENU.map((item) => ({ item, s: score(item, query) }))
+  const scored = MENU.map((item) => ({ item, s: score(item, query) }))
     .filter((r) => r.s > 0)
-    .sort((a, b) => b.s - a.s)
-    .slice(0, k)
-    .map((r) => r.item);
+    .sort((a, b) => b.s - a.s);
+
+  const best = new Map();
+  for (const r of scored) {
+    const prev = best.get(r.item.name);
+    if (!prev) {
+      best.set(r.item.name, r);
+    } else if ((r.item.desc || "").length > (prev.item.desc || "").length) {
+      best.set(r.item.name, { item: r.item, s: prev.s });
+    }
+  }
+
+  return [...best.values()].slice(0, k).map((r) => r.item);
 }
 
 function describe(items) {
