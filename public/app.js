@@ -17,6 +17,17 @@ let MENU = [];
 let activeCat = "All";
 let cart = [];
 
+// "default" | "price-asc" | "price-desc". "default" means catalogue order
+// while browsing and best-match order while searching — see applySort().
+let sortMode = "default";
+
+// The items the Worker last handed back from Ask, or null. Kept so that
+// changing the sort after an Ask re-sorts THOSE results instead of
+// silently dropping back to whatever the local search finds for the same
+// text. Cleared by anything that supersedes an answer: a keystroke, a
+// category change.
+let askRows = null;
+
 // Bumped on every new question and on every keystroke. A reply whose
 // ticket no longer matches is stale and gets discarded, so overlapping
 // or out-of-order responses can never overwrite a newer one.
@@ -208,7 +219,10 @@ function scoreItem(item, query) {
   if (!q) return 1;          // nothing but brand words: match everything
 
   const name = norm(item.name);
-  const hay = norm(`${item.name} ${item.desc} ${item.cat}`);
+  // `alt` holds the text dedupe() merged away from a cross-listed copy:
+  // its category and whichever description lost the card. Searchable but
+  // never rendered, so collapsing the duplicate card costs no matches.
+  const hay = norm(`${item.name} ${item.desc} ${item.cat} ${item.alt || ""}`);
 
   // Gated to 3+ chars: below that, hay.includes(q) matches almost every
   // item (nearly everything contains a given single letter), so a 1-2
@@ -247,6 +261,82 @@ function scoreItem(item, query) {
   // before this.
   if (hits / terms.length < MIN_COVERAGE) return 0;
   return s;
+}
+
+/* ---------- cross-listed items ----------
+   Four products are filed under two categories each: the Pizza is in
+   both Savoury Stuff and Italian Cuisine, and the Zera Biscuits, Silky
+   Chocolate Spread and Tea Creamer are each in two as well. That is
+   correct in the catalogue — someone browsing Italian Cuisine should
+   find the pizza there — but it means the "All" view was rendering the
+   same product twice, and the two cards behaved as two different
+   products all the way into the WhatsApp message.
+
+   MERGED, not first-wins. The two copies carry the same price and the
+   same macros but DIFFERENT descriptions, written for their own section:
+   the pizza reads "Personal-size keto pizza" under Savoury Stuff and
+   "Juicy chicken, melted cheese, herbs and condiments on a coconut-flour
+   crust" under Italian Cuisine. Simply keeping the first would show the
+   thinner of the two AND drop the other's words out of the search index,
+   so "chicken", "melted cheese" and "italian" would all stop finding the
+   pizza in the All view. So:
+
+     - the longer description wins the card, being the more informative
+       one in all four cases here;
+     - the discarded description and the second category are kept in
+       `alt`, which is never rendered but IS part of the search haystack,
+       so every word that used to match still matches.
+
+   Keyed on name, so it only ever collapses the same product. First
+   occurrence holds the position, which keeps catalogue order intact.
+   Within a single category there is nothing to collapse, so this is a
+   no-op when a chip is active — each category page keeps its own copy.
+
+   The real fix is one row per product in catalogue.xlsx, and this stays
+   correct if that ever happens: with nothing to merge it just passes
+   rows through. */
+function dedupe(rows) {
+  const out = [];
+  const at = new Map();                       // name -> index in out
+  for (const m of rows) {
+    const i = at.get(m.name);
+    if (i === undefined) {
+      at.set(m.name, out.length);
+      out.push({ ...m, alt: [] });
+      continue;
+    }
+    const keep = out[i];
+    keep.alt.push(m.cat);                     // the other section's name
+    if ((m.desc || "").length > (keep.desc || "").length) {
+      keep.alt.push(keep.desc);               // demote, never delete
+      keep.desc = m.desc;
+    } else {
+      keep.alt.push(m.desc);
+    }
+    // Fill any gap the first copy happened to have.
+    if (!keep.macros && m.macros) { keep.macros = m.macros; keep.serving = m.serving; }
+  }
+  return out.map((m) => ({ ...m, alt: m.alt.filter(Boolean).join(" ") }));
+}
+
+/* ---------- sort ----------
+   Copy before sorting: the array handed in is sometimes the pool itself,
+   and sorting in place would quietly reorder it for every later render.
+
+   "default" is two different orders depending on context, which is why it
+   is a no-op here rather than a sort of its own. With no query it is the
+   order the catalogue is written in — related items sit together, which
+   is how a menu is meant to read. With a query it is the score order
+   render() already produced, best match first. Price sorting replaces
+   whichever of those applied.
+
+   Sorting is stable, so equal prices keep their previous relative order:
+   the two Rs 1,350 items stay in menu order rather than shuffling
+   between renders. */
+function applySort(rows) {
+  if (sortMode === "price-asc") return [...rows].sort((a, b) => a.price - b.price);
+  if (sortMode === "price-desc") return [...rows].sort((a, b) => b.price - a.price);
+  return rows;
 }
 
 function macroStrip(m, serving) {
@@ -338,12 +428,23 @@ function setHint(mode, q) {
 }
 
 function render(rows) {
+  // Nothing to render against. boot() has already put a "could not load"
+  // message in the list, and rendering an empty grid over it would leave
+  // a blank page with no explanation. Reachable from the sort control and
+  // from typing, both of which stay live after a failed menu fetch.
+  if (!MENU.length) return;
+
   const q = $("q").value.trim();
   let mode = "normal";
   let fellBack = false;
 
-  if (!rows) {
-    const pool = MENU.filter((m) => activeCat === "All" || m.cat === activeCat);
+  if (rows) {
+    // Handed to us by Ask. The Worker retrieves from the same catalogue,
+    // duplicates included, so it needs the same collapsing the pool gets.
+    rows = dedupe(rows);
+  } else {
+    const pool = dedupe(
+      MENU.filter((m) => activeCat === "All" || m.cat === activeCat));
     if (!q) {
       rows = pool;                                    // browsing: catalogue order
     } else {
@@ -374,7 +475,19 @@ function render(rows) {
   $("count").textContent = !fellBack && q && rows.length
     ? `${rows.length} item${rows.length > 1 ? "s" : ""}` : "";
 
-  $("list").innerHTML = rows.map(card).join("");
+  // Say what "default" currently means. Ranked by relevance only when a
+  // query actually filtered something; the no-match fallback puts the
+  // menu back in catalogue order, so it must not claim to be a ranking.
+  //
+  // Guarded for the same reason CFG_ASK is at the top of this file: this
+  // site is deployed by editing one file at a time, so there is a window
+  // where this script is live against the previous index.html. Without
+  // the guard that window is a blank menu rather than a missing control.
+  const sortEl = $("sort");
+  const def = sortEl && sortEl.querySelector('option[value="default"]');
+  if (def) def.textContent = q && !fellBack ? "Best match" : "Menu order";
+
+  $("list").innerHTML = applySort(rows).map(card).join("");
 }
 
 /* ---------- order ----------
@@ -402,9 +515,9 @@ function loadCart() {
     const raw = JSON.parse(localStorage.getItem(CART_KEY) || "[]");
     if (!Array.isArray(raw)) return [];
     return raw
-      .filter((c) => c && typeof c.name === "string" && typeof c.cat === "string"
+      .filter((c) => c && typeof c.name === "string"
                        && Number.isFinite(+c.qty) && +c.qty > 0)
-      .map((c) => ({ name: c.name, cat: c.cat, price: +c.price,
+      .map((c) => ({ name: c.name, cat: String(c.cat || ""), price: +c.price,
                      qty: Math.min(99, Math.floor(+c.qty)) }));
   } catch { return []; }
 }
@@ -412,13 +525,30 @@ function loadCart() {
 /* Price and existence both come from the live menu, never from storage.
    A line whose product has been removed from the catalogue is dropped
    rather than kept at its old price — quoting a discontinued item is
-   worse than silently losing it. */
+   worse than silently losing it.
+
+   Matching on name alone, not name + category. A cross-listed product
+   used to match only the copy whose category happened to be saved, so
+   the same pizza added from Savoury Stuff and from Italian Cuisine
+   became two lines quoting the same product twice on WhatsApp. Merging
+   here rather than only at the Add button also repairs any cart already
+   saved in that state — those carts exist on real phones right now, and
+   two lines with the same name would otherwise leave the second one's
+   +/- buttons inert, since findIndex always lands on the first. */
 function reconcileCart() {
-  cart = cart.reduce((keep, c) => {
-    const live = MENU.find((m) => m.name === c.name && m.cat === c.cat);
-    if (live) keep.push({ name: c.name, cat: c.cat, price: live.price, qty: c.qty });
-    return keep;
-  }, []);
+  const merged = new Map();
+  for (const c of cart) {
+    const live = MENU.find((m) => m.name === c.name);
+    if (!live) continue;                       // discontinued: drop the line
+    const prev = merged.get(c.name);
+    merged.set(c.name, {
+      name: live.name,
+      cat: live.cat,
+      price: live.price,
+      qty: Math.min(99, (prev ? prev.qty : 0) + c.qty),
+    });
+  }
+  cart = [...merged.values()];
 }
 
 function setPanel(open) {
@@ -438,12 +568,12 @@ function renderCart() {
       <span class="ln">${esc(c.name)}</span>
       <span class="lt">${rs(c.qty * c.price)}</span>
       <span class="qty">
-        <button class="q" data-op="dec" data-name="${esc(c.name)}" data-cat="${esc(c.cat)}"
+        <button class="q" data-op="dec" data-name="${esc(c.name)}"
                 type="button" aria-label="One fewer ${esc(c.name)}">&minus;</button>
         <span class="qn">${c.qty}</span>
-        <button class="q" data-op="inc" data-name="${esc(c.name)}" data-cat="${esc(c.cat)}"
+        <button class="q" data-op="inc" data-name="${esc(c.name)}"
                 type="button" aria-label="One more ${esc(c.name)}">+</button>
-        <button class="rm" data-op="rm" data-name="${esc(c.name)}" data-cat="${esc(c.cat)}"
+        <button class="rm" data-op="rm" data-name="${esc(c.name)}"
                 type="button" aria-label="Remove ${esc(c.name)}">&times;</button>
       </span>
     </li>`).join("");
@@ -531,7 +661,8 @@ async function ask() {
 
     if (Array.isArray(data.items) && data.items.length) {
       setCategory("All");          // results can span categories
-      render(data.items);
+      askRows = data.items;        // so a later re-sort keeps them
+      render(askRows);
     }
   } catch {
     if (ticket === askTicket) {
@@ -549,6 +680,7 @@ $("q").addEventListener("input", () => {
   $("askBtn").disabled = !q;
   askTicket++;                  // invalidate any reply still in flight
   $("answer").innerHTML = "";   // an old answer must not outlive its question
+  askRows = null;               // nor the items that answer was about
 
   // Filtering stays synchronous — only the "nothing matched" wording
   // waits for the typing to stop.
@@ -564,6 +696,22 @@ $("q").addEventListener("keydown", (e) => {
 });
 $("askBtn").addEventListener("click", ask);
 
+/* Re-render rather than re-sorting the DOM: render() is cheap at this
+   catalogue size and it is the single place that decides what is on
+   screen. Passing askRows back in is what stops a sort from throwing
+   away an Ask result — with plain render() the same text would be re-run
+   through the local search instead, which finds a different set.
+
+   Guarded: boot() is the last statement in this file, so an unguarded
+   listener on markup that isn't there yet would throw before the menu
+   ever renders. Sorting is a convenience; browsing is the site. */
+if ($("sort")) {
+  $("sort").addEventListener("change", (e) => {
+    sortMode = e.target.value;
+    render(askRows);
+  });
+}
+
 function setCategory(cat) {
   activeCat = cat;
   [...$("chips").children].forEach((c) =>
@@ -574,14 +722,16 @@ $("chips").addEventListener("click", (e) => {
   const b = e.target.closest(".chip");
   if (!b) return;
   setCategory(b.dataset.cat);
+  askRows = null;               // browsing again, not reading an answer
   render();
 });
 
 $("list").addEventListener("click", (e) => {
   const b = e.target.closest(".add");
   if (!b) return;
-  const found = cart.find(
-    (c) => c.name === b.dataset.name && c.cat === b.dataset.cat);
+  // Name only, never name + category: the four cross-listed products
+  // are one product each, however the customer navigated to them.
+  const found = cart.find((c) => c.name === b.dataset.name);
   if (found) found.qty++;
   else cart.push({ name: b.dataset.name, cat: b.dataset.cat,
                    price: +b.dataset.price, qty: 1 });
@@ -593,14 +743,13 @@ $("list").addEventListener("click", (e) => {
 $("tally").addEventListener("click", () => setPanel($("panel").hidden));
 
 /* One delegated handler for all three controls. Lines are matched on
-   name + category, the same key the Add button uses, rather than on an
+   name, the same key the Add button uses, rather than on an
    index — indices shift the moment a line is removed, and the markup is
    rebuilt on every change. */
 $("lines").addEventListener("click", (e) => {
   const b = e.target.closest("button[data-op]");
   if (!b) return;
-  const i = cart.findIndex(
-    (c) => c.name === b.dataset.name && c.cat === b.dataset.cat);
+  const i = cart.findIndex((c) => c.name === b.dataset.name);
   if (i < 0) return;
 
   const op = b.dataset.op;

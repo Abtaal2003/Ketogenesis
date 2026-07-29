@@ -70,7 +70,26 @@
 
 <main class="wrap-wide">
   <div id="answer" aria-live="polite"></div>
-  <p class="count" id="count"></p>
+
+  <!-- Count on the left, sort on the right. Deliberately NOT in the
+       sticky bar above: that bar already costs a chunk of a phone screen
+       and every row added to it pushes the menu further down. -->
+  <div class="results">
+    <p class="count" id="count"></p>
+    <label class="sort" for="sort">
+      <span>Sort</span>
+      <!-- The first option's label is rewritten by render(): "Best match"
+           while a search is filtering, "Menu order" otherwise. Sorting by
+           price throws relevance away, so the default has to say what it
+           is actually doing at the time. -->
+      <select id="sort">
+        <option value="default">Menu order</option>
+        <option value="price-asc">Price: low to high</option>
+        <option value="price-desc">Price: high to low</option>
+      </select>
+    </label>
+  </div>
+
   <div id="list"></div>
 
   <footer>

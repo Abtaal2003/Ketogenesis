@@ -211,8 +211,36 @@ input[type=search]:focus-visible{outline:2px solid var(--red);outline-offset:1px
 @keyframes blink{0%,60%,100%{opacity:.25}30%{opacity:1}}
 
 /* ---------- items ---------- */
+/* Count left, sort right. The row carries the margins that used to sit on
+   .count, so the spacing above the grid is unchanged on a query that
+   shows a count and merely gains a control on one that does not. */
+.results{display:flex;align-items:center;justify-content:space-between;
+         gap:12px;margin:22px 2px 10px;flex-wrap:wrap}
 .count{font-family:"IBM Plex Mono",monospace;font-size:.7rem;letter-spacing:.12em;
-       text-transform:uppercase;color:var(--dim);margin:22px 2px 10px}
+       text-transform:uppercase;color:var(--dim);margin:0}
+/* Pushes the control to the right edge on its own when the count is empty,
+   which is most of the time — browsing shows no count. */
+.sort{margin-left:auto;display:flex;align-items:center;gap:8px}
+.sort > span{font-family:"IBM Plex Mono",monospace;font-size:.7rem;
+             letter-spacing:.12em;text-transform:uppercase;color:var(--dim)}
+/* --paper for the fill, --ink for the text: the same pairing the chips
+   use, and the reason neither goes white-on-white in dark mode.
+   color-scheme is scoped to this element rather than set on :root so the
+   OS-drawn dropdown follows the theme without touching the search field's
+   native controls. */
+.sort select{font:inherit;font-size:.82rem;font-weight:500;
+             background:var(--paper);color:var(--ink);
+             border:1px solid var(--line);border-radius:999px;
+             padding:6px 12px;cursor:pointer;color-scheme:light}
+.sort select:hover{border-color:var(--dim)}
+.sort select:focus-visible{outline:2px solid var(--red);outline-offset:2px}
+:root[data-theme="dark"] .sort select{color-scheme:dark}
+/* Same 44px floor the other real controls get on touch. The category
+   chips are deliberately left out of this; a native select opens an OS
+   picker and belongs with the buttons, not with them. */
+@media (pointer:coarse){
+  .sort select{min-height:44px}
+}
 
 /* On phones: a simple stacked list with dividers (the original look).
    On wider screens: a card grid that uses the extra width. The switch is
