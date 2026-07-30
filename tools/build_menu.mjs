@@ -29,7 +29,7 @@
  * inline macros and no macro columns, it simply shows no strip.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import * as XLSX from "xlsx";
@@ -39,6 +39,74 @@ const XLSX_PATH = join(ROOT, "tools", "catalogue.xlsx");
 const CSV_PATH = join(ROOT, "tools", "catalogue.csv"); // legacy fallback
 const OUT_JSON = join(ROOT, "public", "menu.json");
 const OUT_WORKER = join(ROOT, "src", "menu.js");
+const IMG_DIR = join(ROOT, "public", "img");
+
+
+/* ---------- product photos ----------
+   Drop a picture into public/img named after the product and it appears
+   on that product's card. Nothing to edit, nothing to configure: this
+   scans the folder at build time and writes the path onto the matching
+   row.
+
+   Both sides are reduced to the same slug before comparing, so all of
+   these land on "Keto Pizza (7 inches diameter)":
+
+     Keto Pizza (7 inches diameter).jpg
+     keto-pizza-7-inches-diameter.webp
+     Keto Pizza 7 inches diameter.png
+
+   That matters because a filename cannot hold the names as written:
+   there are parentheses in most of them, and a few contain a slash
+   ("Keto Egg Noodles / Chowmein"), which no filesystem will accept.
+   Slugging both sides sidesteps the whole problem, and the rule
+   produces no collisions across the current catalogue.
+
+   A product filed under two categories has one name, so a single file
+   covers both of its rows automatically.
+
+   webp beats jpg beats png when the same product has more than one
+   file, so dropping in a smaller webp later supersedes the original
+   without anyone having to delete anything. */
+const IMG_EXT = ["webp", "avif", "jpg", "jpeg", "png"];
+
+// Files in public/img that are part of the site's furniture, not
+// products. Matched on slug, so keto-mark.png and keto-mark.webp are
+// both covered by the one entry.
+const RESERVED = new Set(["keto-mark", "placeholder", "favicon", "og"]);
+
+function slug(text) {
+  return String(text ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
+
+/** slug -> filename, best available extension per product. */
+function scanImages() {
+  let files;
+  try {
+    files = readdirSync(IMG_DIR);
+  } catch {
+    return new Map();               // no img folder yet; not an error
+  }
+
+  const found = new Map();
+  for (const file of files) {
+    const m = file.match(/^(.*)\.([A-Za-z0-9]+)$/);
+    if (!m) continue;
+    const ext = m[2].toLowerCase();
+    if (!IMG_EXT.includes(ext)) continue;
+
+    const key = slug(m[1]);
+    if (!key || RESERVED.has(key)) continue;
+
+    const prev = found.get(key);
+    if (!prev || IMG_EXT.indexOf(ext) < IMG_EXT.indexOf(prev.ext)) {
+      found.set(key, { file, ext });
+    }
+  }
+  return found;
+}
 
 /* ---------- header matching ----------
    Sheets from different exports label columns differently. Match on a
@@ -214,6 +282,7 @@ function main() {
   const cell = (row, field) =>
     field in headerMap ? row[headerMap[field]] : undefined;
 
+  const images = scanImages();
   const items = [];
   let skipped = 0;
 
@@ -264,8 +333,14 @@ function main() {
     // tail. Done last so parsing above still sees the original text.
     entry.desc = tidyDescription(rawDesc);
 
-    const image = clean(cell(row, "image"));
-    if (image) entry.image = image;
+    // An explicit image column wins if the sheet ever has one; otherwise
+    // fall back to whatever is sitting in public/img under this name.
+    // encodeURIComponent because a filename may well contain spaces and
+    // parentheses, which are not valid in a URL as typed.
+    const column = clean(cell(row, "image"));
+    const onDisk = images.get(slug(name));
+    if (column) entry.image = column;
+    else if (onDisk) entry.image = `img/${encodeURIComponent(onDisk.file)}`;
 
     items.push(entry);
   }
@@ -296,6 +371,86 @@ function main() {
   if (skipped) console.log(`  skipped ${skipped} row(s) with no name or price`);
   if (noDesc) console.log(`  ${noDesc} item(s) have no description`);
   if (noMacros) console.log(`  ${noMacros} item(s) have no macros (no strip shown)`);
+
+  /* Photos, reported in both directions.
+
+     Products without one are only a count: 70-odd filenames in a deploy
+     log is noise, and the site handles the gap by showing the Keto
+     Genesis logo instead.
+
+     Files that matched NOTHING are printed in full, because that is
+     always a mistake worth seeing: a typo, or a picture named after
+     something we do not sell. Silence there would look identical to
+     the photo simply not appearing, which is the confusing case this
+     is meant to prevent. */
+  const used = new Set(items.map((i) => slug(i.name)).filter((k) => images.has(k)));
+  const withPhoto = items.filter((i) => i.image).length;
+  console.log(`  ${withPhoto} of ${items.length} item(s) have a photo`);
+
+  /* The stand-in is referenced by every product that has no photo of its
+     own, so if it goes missing that is not one broken card, it is all of
+     them. Cheap to check here, and the alternative is finding out from
+     the live site. */
+  if (!existsSync(join(IMG_DIR, "placeholder.webp"))) {
+    console.log("  WARNING: public/img/placeholder.webp is missing;" +
+                " products without a photo will show no image at all");
+  }
+
+  const orphans = [...images.keys()].filter((k) => !used.has(k));
+  if (orphans.length) {
+    console.log(`  WARNING: ${orphans.length} file(s) in public/img match no product:`);
+    for (const key of orphans) {
+      const near = items
+        .map((i) => ({ name: i.name, score: overlap(key, slug(i.name)) }))
+        .sort((a, b) => b.score - a.score)[0];
+      const hint = near && near.score > 0 ? `  (closest product: ${near.name})` : "";
+      console.log(`    ${images.get(key).file}${hint}`);
+    }
+  }
+}
+
+/* Suggest what an unmatched filename was probably meant to be. Only ever
+   used for a line in the build log.
+
+   "keto" is skipped: every product on the menu starts with it, so
+   counting it made the first item in the catalogue the "closest match"
+   for every typo, which is worse than saying nothing. Words within an
+   edit or two of each other still count, so "Keto Piza.jpg" finds the
+   pizza rather than shrugging. */
+function overlap(a, b) {
+  const BRAND = new Set(["keto", "ketogenesis"]);
+  const words = (s) => s.split("-").filter((w) => w.length > 2 && !BRAND.has(w));
+  const target = words(b);
+  let score = 0;
+  for (const w of words(a)) {
+    if (target.some((t) => {
+      if (t === w) return true;
+      const min = Math.min(w.length, t.length);
+      if (min < 4) return false;
+      // One edit on a short word, two once there is enough word to be
+      // sure. At a flat two, "snap" matched "soup" and a holiday photo
+      // was confidently reported as a near-miss for the soup.
+      return editDistance(w, t) <= (min >= 7 ? 2 : 1);
+    })) score++;
+  }
+  return score;
+}
+
+/** Levenshtein, single-row. Small inputs only: one word against another. */
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(
+        prev[j] + 1,
+        row[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+    prev = row;
+  }
+  return prev[b.length];
 }
 
 main();
