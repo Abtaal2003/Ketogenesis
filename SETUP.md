@@ -320,9 +320,35 @@ from the WhatsApp export is stripped so customers never see it. If a
 future sheet has dedicated `carbs` / `fat` / `protein` / `kcal` /
 `serving` columns instead, those are used directly.
 
-Product photos: add an `image` column with either a URL or a filename
-like `img/keto-brownies.jpg`, downloaded into `public/img/`. Local
-copies are safer, since exported image URLs expire.
+### Product photos
+
+Photos work like the spreadsheet: put the file in the repo and push.
+There is nothing to configure.
+
+1. Name the file after the product, using hyphens instead of spaces:
+   `keto-pizza-7-inches-diameter.jpg` for "Keto Pizza (7 inches
+   diameter)". Capitals, spaces and brackets work too
+   (`Keto Pizza (7 inches diameter).jpg`), but hyphens are simplest and
+   avoid the products whose names contain a slash.
+2. Upload it to `public/img/` on GitHub (*Add file → Upload files*, drop
+   it in, commit).
+3. That's it — the push triggers a rebuild and the photo appears.
+
+Use landscape photos, at least 900px on the long side, under about 250KB
+each, and **keep the food in the middle of the frame**. The same picture
+is cropped to a wide strip on a computer and to a square on a phone, so
+anything close to an edge is lost in one view or the other.
+
+Accepted: `.webp`, `.avif`, `.jpg`, `.jpeg`, `.png`. If two files match
+the same product, `.webp` wins — so you can drop in a smaller version
+later without deleting the old one.
+
+Any product without a photo shows the Keto Genesis logo instead, so the
+site looks finished long before everything has been photographed. A
+product filed under two categories needs only one file.
+
+If a future spreadsheet ever gains an `image` column, that column takes
+priority over the folder for those rows.
 
 ---
 
@@ -344,9 +370,12 @@ searchable.
 
 Two rules if you edit it:
 
-1. **Change both files identically.** If they drift, typing a query and
-   pressing Ask on the same query start returning different items, which
-   reads as a bug to a customer.
+1. **Change both files together.** They are not textually identical —
+   `public/app.js` also searches an `alt` field that exists only in the
+   page, for the reason explained beside the code — but they must return
+   the same products for the same query. If they drift, typing a query
+   and pressing Ask on the same query start returning different items,
+   which reads as a bug to a customer.
 2. **Never add a word that could describe food.** Filtering "free" would
    break every search for sugar-free and gluten-free items.
 
@@ -392,13 +421,39 @@ GitHub is not the same as the file being live.
 2. Go to **dash.cloudflare.com → Workers & Pages → ketogenesis →
    Deployments**. There should be a deployment from a minute or two after
    your upload. If it is red, open it and read the build log.
-3. The log ends with a line like `77 items across 11 categories`. If the
-   number is lower than you expect, rows were skipped — the log names
-   how many and why. A row is skipped when it has no item name or no
-   price.
+3. The log ends with a summary: `77 items across 11 categories`, how many
+   items have no macros, and how many have a photo. If the item number is
+   lower than you expect, rows were skipped — the log names how many and
+   why. A row is skipped when it has no item name or no price.
 
 Hard-refresh the page before concluding it didn't work (Ctrl+Shift+R, or
 Cmd+Shift+R on a Mac). Browsers cache aggressively.
+
+### I added a photo and it didn't appear
+
+The build tells you exactly what happened, so read it before changing
+anything. **dash.cloudflare.com → Workers & Pages → ketogenesis →
+Deployments**, open the most recent one, and look at the end of the log.
+
+- **`12 of 77 item(s) have a photo`** and the count went up — the file was
+  found. If you still cannot see it, hard-refresh the page
+  (Ctrl+Shift+R, or Cmd+Shift+R on a Mac). Browsers cache images hard.
+- **`WARNING: 1 file(s) in public/img match no product:`** followed by
+  your filename — the name matches nothing on the menu. The log prints
+  its best guess underneath, for example
+  `Keto Piza.jpg  (closest product: Keto Pizza (7 inches diameter))`.
+  Rename the file to match the product and upload it again.
+- **No mention of your file at all** — it never reached `public/img/`.
+  Check on GitHub that it is inside that folder rather than the
+  repository root.
+- **`WARNING: public/img/placeholder.webp is missing`** — the stand-in
+  logo has been deleted or renamed. Every product without its own photo
+  will show no picture until it is put back.
+
+Filenames for product photos are not case-sensitive: `Keto Pizza.JPG`
+matches fine. The folder itself is, though — it must be exactly
+`public/img/`, and the stand-in must be exactly `placeholder.webp`, both
+lowercase.
 
 ### The page loads but the menu area is empty
 
@@ -465,14 +520,18 @@ AI layer is completely down, so the shop is never actually shut.
 | GitHub | Rs 0 |
 | Custom domain | optional, ~Rs 3,000–4,000/year |
 
-**The two providers fail in opposite directions, so the rule differs.**
+**The providers fail in different directions, so the rule differs.**
+
+*Groq (what the site currently uses):* the free tier is rate-limited
+rather than metered, so there is no bill to run up. Nothing to guard
+against here — it simply stops answering until the limit resets.
 
 *Cerebras:* never add a payment method. Without one the free tier is a
 hard cap that simply stops working when exhausted. With one it becomes a
 bill.
 
-*Gemini (what the site currently uses):* never enable billing on the
-Google Cloud project the API key belongs to. This one is counterintuitive
+*Gemini (not currently selected, but the documented fallback):* never
+enable billing on the Google Cloud project the API key belongs to. This one is counterintuitive
 — enabling billing does not give you a free tier followed by charges, it
 **removes** the free tier from that project and bills from the very first
 token. If you ever do want a paid Gemini setup, create a separate project
