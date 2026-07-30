@@ -313,8 +313,12 @@ function dedupe(rows) {
     } else {
       keep.alt.push(m.desc);
     }
-    // Fill any gap the first copy happened to have.
+    // Fill any gap the first copy happened to have. The build gives both
+    // rows of a cross-listed product the same photo, since they share a
+    // name, so this only matters if the sheet ever sets an image column
+    // on one row and not the other.
     if (!keep.macros && m.macros) { keep.macros = m.macros; keep.serving = m.serving; }
+    if (!keep.image && m.image) keep.image = m.image;
   }
   return out.map((m) => ({ ...m, alt: m.alt.filter(Boolean).join(" ") }));
 }
@@ -348,10 +352,17 @@ function macroStrip(m, serving) {
   return `<p class="macros">${parts.join("")}</p>`;
 }
 
+/* Shown on any product that has no photo yet. Its own class rather than
+   just a different src: a real photo should fill the frame, but the logo
+   has to sit inside it whole, so the two are styled differently. Dropping
+   a correctly named file into public/img replaces it on the next deploy;
+   see tools/build_menu.mjs for the naming rule. */
+const PLACEHOLDER = "img/placeholder.webp";
+
 function card(m) {
   const img = m.image
     ? `<img class="thumb" src="${esc(m.image)}" alt="" loading="lazy">`
-    : "";
+    : `<img class="thumb ph" src="${PLACEHOLDER}" alt="" loading="lazy">`;
   return `<article class="item">
   ${img}
   <div class="body">
@@ -705,6 +716,21 @@ $("askBtn").addEventListener("click", ask);
    Guarded: boot() is the last statement in this file, so an unguarded
    listener on markup that isn't there yet would throw before the menu
    ever renders. Sorting is a convenience; browsing is the site. */
+/* An image is the one thing on a card that can still fail after the card
+   has rendered. A missing file would otherwise leave the browser's broken
+   image icon in place, and because every unphotographed product points at
+   the same stand-in, one missing file would do that to every card at
+   once. Dropping the element instead falls back to the text-only card the
+   site had before photos existed.
+
+   Capture phase because `error` does not bubble, and one listener on the
+   container rather than 73 on the images, which are replaced on every
+   render. */
+$("list").addEventListener("error", (e) => {
+  const el = e.target;
+  if (el && el.tagName === "IMG" && el.classList.contains("thumb")) el.remove();
+}, true);
+
 if ($("sort")) {
   $("sort").addEventListener("change", (e) => {
     sortMode = e.target.value;
